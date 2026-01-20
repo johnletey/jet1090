@@ -303,6 +303,7 @@ Update changelog after fixing issues
 
 - **Always** use `plan.md` to track complex tasks
 - Update frequently as you work through tasks
+- **CRITICAL:** Always include a final task item reminding yourself to get user approval before committing
 - Structure:
 
   ```markdown
@@ -311,6 +312,7 @@ Update changelog after fixing issues
   - [ ] Step 1
   - [ ] Step 2
   - [x] Completed step
+  - [ ] ⚠️ STOP: Get explicit user approval before committing
 
   ## Next:
 
@@ -322,10 +324,11 @@ Update changelog after fixing issues
 ### Task breakdown approach
 
 1. **Understand the requirement** - Read issue, analyze code context
-2. **Plan steps** - Break into discrete, testable units
+2. **Plan steps** - Break into discrete, testable units (always include "Get user approval before committing" as final step)
 3. **Execute incrementally** - Small commits, test frequently
 4. **Verify** - Run tests, check lints, update docs
 5. **Review** - Self-review changes before proposing to user
+6. **⚠️ Get explicit user approval** - NEVER commit without asking first
 
 ## Support and contributions
 
