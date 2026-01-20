@@ -47,6 +47,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 struct Options {
     /// Activate JSON output
     #[arg(short, long, default_value = "false")]
+    #[serde(default)]
     verbose: bool,
 
     /// Dump a copy of the received messages as .jsonl
@@ -55,6 +56,7 @@ struct Options {
 
     /// Display a table in interactive mode (not compatible with verbose)
     #[arg(short, long, default_value = "false")]
+    #[serde(default)]
     interactive: bool,
 
     /// Port for the API endpoint (on 0.0.0.0)
@@ -97,6 +99,7 @@ struct Options {
 
     /// Prevent the computer sleeping when decoding is in progress
     #[arg(long, default_value=None)]
+    #[serde(default)]
     prevent_sleep: bool,
 
     /// Should we update the reference positions (if the receiver is moving)
@@ -107,6 +110,7 @@ struct Options {
     #[arg(long, default_value = "450")]
     deduplication: Option<u32>,
 
+    /// Include decoding time statistics in the output
     #[arg(long)]
     stats: Option<bool>,
 
@@ -127,6 +131,7 @@ struct Options {
     /// `reference` can be LFPG for major airports, `43.3,1.35` otherwise.
     ///
     /// More details are available at: <https://mode-s.org/jet1090/sources>
+    #[serde(default)]
     sources: Vec<source::Source>,
 
     /// logging file, use "-" for stdout (only in non-interactive mode)
