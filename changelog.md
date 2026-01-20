@@ -2,7 +2,55 @@
 
 ## Unreleased
 
+### SDR Support & Configuration
+- **BREAKING**: Refactor SDR handling to use desperado 0.2.0 library (#416)
+  - Unified device configuration with `DeviceConfig` pattern
+  - Three feature flags: `rtlsdr`, `soapy`, `pluto` (replace old `sdr` feature)
+  - Make desperado an optional dependency (only included with SDR features)
+- **RTL-SDR improvements** (#416):
+  - Device selection by index, manufacturer, product, or serial number
+  - URL format: `rtlsdr://`, `rtlsdr://device_id=0`, `rtlsdr://serial=12345`
+  - Configurable gain control (CLI and TOML config)
+  - Bias-tee support with `--bias-tee` flag
+  - TOML configuration example:
+    ```toml
+    [[sources.rtlsdr]]
+    device_id = 0
+    gain = 49.6
+    bias_tee = true
+    ```
+- **SoapySDR improvements** (#416):
+  - Bias-tee support (feature-gated, driver-dependent)
+  - Device selection by serial number: `soapy://serial=...`
+  - Configurable sample rate in TOML
+- **PlutoSDR improvements** (#416):
+  - Simplified to single `pluto://` scheme
+  - Triple-slash URI support: `pluto:///ip:192.168.2.1` or `pluto:///usb:1.27.5`
+- **I/Q file playback** (#416):
+  - Support for recorded I/Q data files (cu8, cs8, cs16 formats)
+  - URL format: `file:///path/to/recording.iq?format=cu8`
+  - Timestamps calculated from file modification time
+  - Tilde expansion (`~/`) support for file paths
+- **Interactive mode improvements** (#416):
+  - Add `--interactive-expire <seconds>` option for configurable aircraft display timeout
+  - Add `--no-interactive-expire` flag to disable expiration (useful for IQ file playback)
+  - Default: 30 seconds (backward compatible)
+- **Build improvements** (#416):
+  - Add libusb dependency configuration for cargo-dist (Linux: `libusb-dev`, macOS: `libusb`)
+  - Clean builds with `--no-default-features`
+  - Remove duplicated code (expanduser utility, config structs)
+
 ### Decoding Improvements
+- **CPR decoding robustness improvements** (#434):
+  - Fix surface positions decoded at wrong airport (up to 589km errors)
+    - Surface messages now properly track airport reference changes
+    - Reduces position errors by 98.8% in real flight data
+  - Add speed validation: reject positions requiring >1200 km/h movement
+  - Improve distance thresholds (50km → 500km context-aware validation)
+  - Keep last good position on validation failure (prevents cascading failures)
+  - decode1090: Sort messages by timestamp before processing (fixes out-of-order CPR pairing)
+  - Bidirectional CPR pairing with 30-second timeout
+  - Better type safety for reserved velocity fields in BDS 0,9
 - Fix BDS 0,6 ground speed formula: movement codes 13-38 now use correct 0.5 kt steps instead of 0.25 kt per ICAO Doc 9871
   - Affected taxiing aircraft and slow ground movements (2-15 kt range)
 - Fix altitude decoding to support negative altitudes for below-sea-level airports (EHAM, etc.) (#422, #424)
@@ -29,6 +77,11 @@
   - Executive summary with change statistics and validation
   - Support for both JSONL and CSV Beast format inputs
   - Documentation and quickstart guides included
+- **Python bindings**: Improve type annotations in rs1090 module (#436)
+  - Add ParamSpec to unpickle_fun for better parameter type preservation
+  - Remove unused type: ignore comments (pandas now properly typed)
+  - Replace generic type: ignore with specific error codes
+  - Reduces mypy errors from 23 to 0
 
 ### Documentation
 - Add comprehensive ICAO Doc 9871 specification documentation across all 20 BDS decoder files
