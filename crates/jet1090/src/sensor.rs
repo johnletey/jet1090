@@ -31,14 +31,55 @@ pub struct Sensor {
  */
 pub async fn sensors(value: &Source) -> Vec<Sensor> {
     match &value.address {
-        Address::Tcp(_)
-        | Address::Udp(_)
-        | Address::Websocket(_)
-        | Address::Rtlsdr(_) => {
+        Address::Tcp(_) | Address::Udp(_) | Address::Websocket(_) => {
             vec![Sensor {
                 serial: value.serial(),
                 name: value.name.clone(),
-                reference: value.reference,
+                reference: value.reference(),
+                altitude: value.altitude,
+                aircraft_count: 0,
+                last_timestamp: 0,
+            }]
+        }
+        #[cfg(feature = "sdr")]
+        Address::File(_) => {
+            vec![Sensor {
+                serial: value.serial(),
+                name: value.name.clone(),
+                reference: value.reference(),
+                altitude: value.altitude,
+                aircraft_count: 0,
+                last_timestamp: 0,
+            }]
+        }
+        #[cfg(feature = "rtlsdr")]
+        Address::Rtlsdr(_) => {
+            vec![Sensor {
+                serial: value.serial(),
+                name: value.name.clone(),
+                reference: value.reference(),
+                altitude: value.altitude,
+                aircraft_count: 0,
+                last_timestamp: 0,
+            }]
+        }
+        #[cfg(feature = "pluto")]
+        Address::Pluto(_) => {
+            vec![Sensor {
+                serial: value.serial(),
+                name: value.name.clone(),
+                reference: value.reference(),
+                altitude: value.altitude,
+                aircraft_count: 0,
+                last_timestamp: 0,
+            }]
+        }
+        #[cfg(feature = "soapy")]
+        Address::Soapy(_) => {
+            vec![Sensor {
+                serial: value.serial(),
+                name: value.name.clone(),
+                reference: value.reference(),
                 altitude: value.altitude,
                 aircraft_count: 0,
                 last_timestamp: 0,

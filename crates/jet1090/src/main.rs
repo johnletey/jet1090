@@ -8,9 +8,11 @@ mod snapshot;
 mod source;
 mod table;
 mod tui;
+mod util;
 mod web;
 
 use crate::tui::Event;
+use crate::util::expanduser;
 use crate::web::serve_web_api;
 use clap::{Command, CommandFactory, Parser, ValueHint};
 use clap_complete::{generate, Generator};
@@ -73,6 +75,18 @@ struct Options {
     #[arg(long, conflicts_with = "history_expire")]
     no_history_expire: Option<bool>,
 
+    /// How long to keep aircraft visible in interactive mode (in seconds), 0 for no expiration
+    #[arg(
+        long,
+        default_value = "30",
+        conflicts_with = "no_interactive_expire"
+    )]
+    interactive_expire: Option<u64>,
+
+    /// Disable interactive mode aircraft expiration
+    #[arg(long, conflicts_with = "interactive_expire")]
+    no_interactive_expire: Option<bool>,
+
     /// Downlink formats to select for stdout, file output and history in REST API (keep empty to select all)
     #[arg(long, value_name = "DF")]
     df_filter: Option<Vec<u16>>,
@@ -115,11 +129,6 @@ struct Options {
     /// More details are available at: <https://mode-s.org/jet1090/sources>
     sources: Vec<source::Source>,
 
-    #[cfg(feature = "rtlsdr")]
-    /// List the detected devices, for now, only --discover rtlsdr is fully supported
-    #[arg(long, value_name = "ARGS")]
-    discover: Option<String>,
-
     /// logging file, use "-" for stdout (only in non-interactive mode)
     #[arg(short, long, value_name = "FILE")]
     log_file: Option<String>,
@@ -131,17 +140,6 @@ struct Options {
     /// Redis topic for the messages, default to "jet1090"
     #[arg(long, value_name = "REDIS TOPIC")]
     redis_topic: Option<String>,
-}
-
-fn expanduser(path: PathBuf) -> PathBuf {
-    // Check if the path starts with "~"
-    if let Some(stripped) = path.to_str().and_then(|p| p.strip_prefix("~")) {
-        if let Some(home_dir) = dirs::home_dir() {
-            // Join the home directory with the rest of the path
-            return home_dir.join(stripped.trim_start_matches('/'));
-        }
-    }
-    path
 }
 
 #[tokio::main]
@@ -209,6 +207,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             options.history_expire = Some(history_expire);
         }
     }
+    if cli_options.no_interactive_expire.is_some_and(|x| x) {
+        options.interactive_expire = Some(0);
+    } else if let Some(interactive_expire) = cli_options.interactive_expire {
+        if interactive_expire == 30
+            && cli_options.no_interactive_expire.is_some_and(|x| x)
+        {
+            options.interactive_expire = Some(0);
+        } else {
+            options.interactive_expire = Some(interactive_expire);
+        }
+    }
     if cli_options.df_filter.is_some() {
         options.df_filter = cli_options.df_filter;
     }
@@ -261,12 +270,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => {
             subscriber.init(); // no logging
         }
-    }
-
-    #[cfg(feature = "rtlsdr")]
-    if let Some(args) = cli_options.discover {
-        rtlsdr::enumerate(&args.to_string());
-        return Ok(());
     }
 
     if options.sources.is_empty() {
@@ -362,6 +365,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         width,
         is_search_mode: false,
         search_query: "".to_string(),
+        interactive_expire: options.interactive_expire.unwrap_or(30),
     }));
     let app_dec = app_tui.clone();
     let app_web = app_tui.clone();
@@ -604,6 +608,7 @@ pub struct Jet1090 {
     width: u16,
     is_search_mode: bool,
     search_query: String,
+    interactive_expire: u64,
 }
 
 #[derive(Debug, Default, PartialEq)]

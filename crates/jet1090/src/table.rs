@@ -25,16 +25,19 @@ pub fn build_table(frame: &mut Frame, app: &mut Jet1090) {
 
     let states = &app.state_vectors;
 
+    // Get the interactive expire threshold (0 means no expiration)
+    let interactive_expire = app.interactive_expire;
+
     // Filter items based on search query
     let search_query = app.search_query.to_lowercase().replace("-", "");
     let search_regex =
         Regex::new(&search_query).unwrap_or_else(|_| Regex::new("").unwrap());
-    let filtered_states =
-        states
-            .values()
-            .filter(|sv| {
-                (sv.cur.count > 1)
-                    && (now as i64 - sv.cur.lastseen as i64) < 30
+    let filtered_states = states
+        .values()
+        .filter(|sv| {
+            (sv.cur.count > 1)
+                    // Only show aircraft seen within the expiration threshold (or always if 0)
+                    && (interactive_expire == 0 || (now as i64 - sv.cur.lastseen as i64) < interactive_expire as i64)
                     && (sv.cur.callsign.as_ref().is_some_and(|s| {
                         search_regex.is_match(&s.to_lowercase())
                     }) || search_regex
@@ -51,8 +54,8 @@ pub fn build_table(frame: &mut Frame, app: &mut Jet1090) {
                                 search_regex.is_match(&n.to_lowercase())
                             })
                         }))
-            })
-            .collect::<Vec<&StateVectors>>();
+        })
+        .collect::<Vec<&StateVectors>>();
 
     app.items = filtered_states
         .iter()
@@ -203,7 +206,12 @@ pub fn build_table(frame: &mut Frame, app: &mut Jet1090) {
     };
     let rows = sorted_elts
         .iter()
-        .filter(|sv| (now as i64 - sv.cur.lastseen as i64) < 30)
+        // Only show aircraft seen within the expiration threshold (or always if 0)
+        .filter(|sv| {
+            interactive_expire == 0
+                || (now as i64 - sv.cur.lastseen as i64)
+                    < interactive_expire as i64
+        })
         .enumerate()
         .map(|(i, sv)| {
             let color = match i % 2 {
