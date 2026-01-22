@@ -130,6 +130,11 @@ struct Options {
     /// `port` must be a number,
     /// `reference` can be LFPG for major airports, `43.3,1.35` otherwise.
     ///
+    /// To verify your SDR device is detected before running jet1090:
+    /// - RTL-SDR: `rtl_test -t` or `rtl_eeprom`
+    /// - SoapySDR: `SoapySDRUtil --find` or `SoapySDRUtil --probe`
+    /// - PlutoSDR: `iio_info -n <ip>` or http://pluto.local web interface
+    ///
     /// More details are available at: <https://mode-s.org/jet1090/sources>
     #[serde(default)]
     sources: Vec<source::Source>,

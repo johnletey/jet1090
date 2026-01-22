@@ -10,20 +10,17 @@ The most common source is the RTL-SDR dongle.
 
 `jet1090` must be [compiled with the `rtlsdr` feature](install.md) in order to support RTL-SDR dongles.
 
-You can check whether `jet1090` detects your dongle:
+Before running `jet1090`, you can verify your dongle is detected by the system:
 
 ```sh
-$ jet1090 --discover=rtlsdr
-Detached kernel driver
-Found Rafael Micro R820T tuner
-Reattached kernel driver
-[INFO] Opening Generic RTL2832U OEM :: 00000001...
-Detached kernel driver
-Found Rafael Micro R820T tuner
-Reattached kernel driver
+# Test RTL-SDR detection and capability
+rtl_test -t
+
+# View device information
+rtl_eeprom
 ```
 
-You can then start decoding incoming messages. Use the `--verbose` option to check it is working well.
+Once verified, start decoding incoming messages. Use the `--verbose` option to check it is working well.
 
 ```sh
 $ jet1090 --verbose rtlsdr://
@@ -63,6 +60,58 @@ Allocating 15 zero-copy buffers
     ```sh
     jet1090 rtlsdr://serial=00000001 rtlsdr://serial=00000002
     ```
+
+## SoapySDR devices
+
+`jet1090` must be [compiled with the `soapy` feature](install.md) to support SoapySDR-compatible devices (HackRF, LimeSDR, etc.).
+
+Before running `jet1090`, verify your SoapySDR device is detected:
+
+```sh
+# Find all SoapySDR devices
+SoapySDRUtil --find
+
+# Probe a specific device for details
+SoapySDRUtil --probe
+```
+
+Once verified, start decoding:
+
+```sh
+jet1090 --verbose soapy://driver=rtlsdr
+jet1090 --verbose soapy://driver=hackrf
+```
+
+For more details on SoapySDR configuration options, see the [configuration documentation](config.md#soapysdr).
+
+## PlutoSDR devices
+
+`jet1090` must be [compiled with the `pluto` feature](install.md) to support Adalm-Pluto SDR devices.
+
+Before running `jet1090`, verify your PlutoSDR is accessible:
+
+```sh
+# For network-connected PlutoSDR
+iio_info -n 192.168.2.1
+
+# Or access the web interface
+# Navigate to http://pluto.local in your browser
+```
+
+Once verified, start decoding:
+
+```sh
+# By IP address
+jet1090 --verbose pluto://192.168.2.1
+
+# By hostname
+jet1090 --verbose pluto://pluto.local
+
+# By USB (if connected via USB)
+jet1090 --verbose pluto:///usb:
+```
+
+For more details on PlutoSDR configuration options, see the [configuration documentation](config.md#plutosdr).
 
 ## Beast format
 
