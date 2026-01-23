@@ -46,7 +46,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 )]
 struct Options {
     /// Activate JSON output
-    #[arg(short, long, default_value = "false")]
+    #[arg(short, long)]
     #[serde(default)]
     verbose: bool,
 
@@ -55,12 +55,12 @@ struct Options {
     output: Option<String>,
 
     /// Display a table in interactive mode (not compatible with verbose)
-    #[arg(short, long, default_value = "false")]
+    #[arg(short, long)]
     #[serde(default)]
     interactive: bool,
 
     /// Show country flags in TUI display (only visible when width > 130)
-    #[arg(long, default_value = "false")]
+    #[arg(long)]
     #[serde(default)]
     flags: bool,
 
@@ -80,7 +80,8 @@ struct Options {
 
     /// Disable history expiration
     #[arg(long, conflicts_with = "history_expire")]
-    no_history_expire: Option<bool>,
+    #[serde(default)]
+    no_history_expire: bool,
 
     /// How long to keep aircraft visible in interactive mode (in seconds), 0 for no expiration
     #[arg(
@@ -92,7 +93,8 @@ struct Options {
 
     /// Disable interactive mode aircraft expiration
     #[arg(long, conflicts_with = "interactive_expire")]
-    no_interactive_expire: Option<bool>,
+    #[serde(default)]
+    no_interactive_expire: bool,
 
     /// Downlink formats to select for stdout, file output and history in REST API (keep empty to select all)
     #[arg(long, value_name = "DF")]
@@ -213,28 +215,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if cli_options.serve_port.is_some() {
         options.serve_port = cli_options.serve_port;
     }
-    if cli_options.no_history_expire.is_some_and(|x| x) {
+    if cli_options.no_history_expire {
         options.history_expire = None;
     } else if let Some(history_expire) = cli_options.history_expire {
-        // If `history_expire` is the default value (15) and `no_history_expire` is true, set to None
-        if history_expire == 15
-            && cli_options.no_history_expire.is_some_and(|x| x)
-        {
-            options.history_expire = None;
-        } else {
-            options.history_expire = Some(history_expire);
-        }
+        options.history_expire = Some(history_expire);
     }
-    if cli_options.no_interactive_expire.is_some_and(|x| x) {
+    if cli_options.no_interactive_expire {
         options.interactive_expire = Some(0);
     } else if let Some(interactive_expire) = cli_options.interactive_expire {
-        if interactive_expire == 30
-            && cli_options.no_interactive_expire.is_some_and(|x| x)
-        {
-            options.interactive_expire = Some(0);
-        } else {
-            options.interactive_expire = Some(interactive_expire);
-        }
+        options.interactive_expire = Some(interactive_expire);
     }
     if cli_options.df_filter.is_some() {
         options.df_filter = cli_options.df_filter;
