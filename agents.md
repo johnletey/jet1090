@@ -208,6 +208,10 @@ Published automatically to https://docs.rs/rs1090
 - `readme.md`: Main repository README with quickstart examples
 - `changelog.md`: Version history and release notes
 
+## Code analysis
+
+- Put any markdown file with summaries and explanations in the analysis/ folder
+
 ## Release
 
 - Ensure latest commmit on master has no failing CI actions
@@ -288,14 +292,14 @@ gh issue view 123 --comments
 **Creating pull requests:**
 
 ```sh
-# After user approves commits
+# Never open PR without user acknowledgement
 gh pr create --title "Title" --body "Description"
 
 # Link to issue
 gh pr create --title "Fix altitude bug" --body "Fixes #123"
 ```
 
-Update changelog after fixing issues
+Update changelog.md after fixing issues
 
 ## Task planning
 
@@ -328,7 +332,7 @@ Update changelog after fixing issues
 3. **Execute incrementally** - Small commits, test frequently
 4. **Verify** - Run tests, check lints, update docs
 5. **Review** - Self-review changes before proposing to user
-6. **⚠️ Get explicit user approval** - NEVER commit without asking first
+6. **⚠️ Get explicit user approval** - NEVER commit or create anything on GitHub without asking first
 
 ## Support and contributions
 
