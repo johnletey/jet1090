@@ -112,6 +112,7 @@ struct Options {
 
     /// Should we update the reference positions (if the receiver is moving)
     #[arg(short, long, default_value=None)]
+    #[serde(default)]
     update_position: bool,
 
     /// When performing deduplication, after how long to dump deduplicated messages (time in ms)
@@ -132,7 +133,8 @@ struct Options {
 
     /// Include decoding time statistics in the output
     #[arg(long)]
-    stats: Option<bool>,
+    #[serde(default)]
+    stats: bool,
 
     /// Shell completion generation
     #[arg(long = "completion", value_enum)]
@@ -259,7 +261,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if cli_options.redis_topic.is_some() {
         options.redis_topic = cli_options.redis_topic;
     }
-    if cli_options.stats.is_some() {
+    if cli_options.stats {
         options.stats = cli_options.stats;
     }
     if cli_options.deduplication.is_some() {
@@ -268,7 +270,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if cli_options.reorder_window.is_some() {
         options.reorder_window = cli_options.reorder_window;
     }
-    if options.stats.unwrap_or(false) {
+    if options.stats {
         serialize_config(true);
     }
 
