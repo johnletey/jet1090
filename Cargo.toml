@@ -15,12 +15,13 @@ documentation = "https://crates.io/crates/rs1090"
 shared-version = true
 tag-name = "v{{version}}"
 
+# Development profile: faster builds with thin LTO
 [profile.release]
-lto = true
-strip = true
+lto = "thin"
 overflow-checks = true
 
-# The profile that 'cargo dist' will build with
+# The profile that 'cargo dist' will build with: full LTO for maximum optimization
 [profile.dist]
 inherits = "release"
-lto = "thin"
+lto = true
+strip = true

@@ -38,8 +38,17 @@ jet1090/
 ### Initial build
 
 ```sh
+# Development build (thin LTO, faster: ~47s incremental, keeps symbols)
 cargo build --release --all-features
+
+# Distribution build (full LTO, optimal binary: ~94s incremental, stripped)
+cargo build --profile dist --all-features
 ```
+
+**Build profiles:**
+- `--release`: Thin LTO for fast development iteration (~15-16 MB with symbols, 47s incremental)
+- `--profile dist`: Full LTO for production releases (12 MB stripped, 94s incremental)
+  - Used automatically by `cargo dist` for releases
 
 ### Building specific components
 
@@ -47,8 +56,11 @@ cargo build --release --all-features
 # Core library only
 cargo build -p rs1090 --release
 
-# jet1090 application
+# jet1090 application (development)
 cargo build -p jet1090 --release
+
+# jet1090 application (distribution)
+cargo build -p jet1090 --profile dist
 
 # Python bindings (requires uv)
 cd python
