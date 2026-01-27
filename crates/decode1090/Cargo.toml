@@ -16,7 +16,7 @@ deku = "0.20.2"
 flate2 = "1.1"
 futures-util = "0.3.31"
 hex = "0.4.3"
-rs1090 = { version = "0.4.15", path = "../rs1090" }
+rs1090 = { version = "0.5.0", path = "../rs1090" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.148"
 sevenz-rust = "0.6"
