@@ -742,6 +742,17 @@ impl<'de> Deserialize<'de> for IdentityCode {
     }
 }
 
+// Altitude decoding constants (ICAO Annex 10 Vol IV §3.1.2.6.5.4)
+
+/// Q-bit altitude increment in feet (25 ft LSB)
+const QBIT_ALT_INCREMENT_FT: i32 = 25;
+
+/// Q-bit altitude offset in feet (range: -1000 to +50,175 ft)
+const QBIT_ALT_OFFSET_FT: i32 = 1000;
+
+/// Gillham code altitude increment in feet (100 ft LSB)
+const GILLHAM_ALT_INCREMENT_FT: i32 = 100;
+
 /// 13-bit encoded altitude field (AC field) per ICAO Annex 10 Vol IV §3.1.2.6.5.4
 ///
 /// # Encoding Modes
@@ -839,7 +850,8 @@ impl AC13Field {
             let n = ((ac13field & 0x1f80) >> 2)  // Upper 6 bits (C1-A4)
                 | ((ac13field & 0x0020) >> 1)    // B1 (bit after Q)
                 | (ac13field & 0x000f); // Lower 4 bits (B2-D4)
-            let altitude = i32::from(n) * 25 - 1000;
+            let altitude =
+                i32::from(n) * QBIT_ALT_INCREMENT_FT - QBIT_ALT_OFFSET_FT;
             Ok(Some(altitude))
         } else {
             // Gillham code (M=0, Q=0): ICAO Annex 10 Vol IV §3.1.2.6.5.4.c
@@ -847,7 +859,7 @@ impl AC13Field {
             // Bit pattern: C1 A1 C2 A2 C4 A4 [M=0] B1 [Q=0] B2 D2 B4 D4
             // 100 ft increments, range: [-1200, +126700] ft
             if let Ok(n) = gray2alt(decode_id13(ac13field)) {
-                let altitude = 100 * n;
+                let altitude = GILLHAM_ALT_INCREMENT_FT * n;
                 Ok(Some(altitude))
             } else {
                 // Invalid Gillham pattern - return None per spec

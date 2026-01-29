@@ -26,6 +26,41 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 
+// Earth and geodesy constants
+/// Earth's radius in kilometers (used for Haversine distance calculations)
+const EARTH_RADIUS_KM: f64 = 6371.0;
+
+// Time thresholds for CPR decoding
+/// Maximum time difference between odd/even messages for global CPR decoding (seconds)
+const CPR_GLOBAL_MAX_TIME_DIFF_S: f64 = 30.0;
+
+/// Maximum age of reference position for local CPR decoding (seconds)
+const CPR_LOCAL_MAX_AGE_S: f64 = 180.0;
+
+/// Active aircraft tracking window for reference position updates (seconds)
+const ACTIVE_AIRCRAFT_WINDOW_S: f64 = 300.0;
+
+/// Speed validation: Maximum time gap for speed checks (seconds)
+/// Beyond this, long gaps make speed validation unreliable
+const SPEED_VALIDATION_MAX_GAP_S: f64 = 1800.0;
+
+// Distance and speed thresholds
+/// Maximum plausible aircraft speed for position validation (km/h)
+/// Rejects positions requiring supersonic speeds to prevent GPS spoofing
+const MAX_AIRCRAFT_SPEED_KMH: f64 = 1200.0;
+
+/// Maximum distance threshold for position jumps in short time (km)
+/// Used to detect reference-based decoding errors
+const MAX_POSITION_JUMP_KM: f64 = 500.0;
+
+/// Maximum distance from reference for new position (km)
+/// Used for sanity checking reference-based decodes
+const MAX_REFERENCE_DISTANCE_KM: f64 = 1.0;
+
+/// Airport proximity threshold (km)
+/// Surface positions must be within this distance of a known airport
+const AIRPORT_PROXIMITY_KM: f64 = 10.0;
+
 fn haversine(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let d_lat = (lat2 - lat1).to_radians();
     let d_lon = (lon2 - lon1).to_radians();
@@ -35,8 +70,7 @@ fn haversine(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
             * (d_lon / 2.0).sin()
             * (d_lon / 2.0).sin();
     let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
-    const R: f64 = 6371.0; // Earth's radius in kilometers
-    R * c // Distance in kilometers
+    EARTH_RADIUS_KM * c // Distance in kilometers
 }
 
 fn dist_haversine(pos1: &Position, pos2: &Position) -> f64 {
@@ -103,11 +137,11 @@ pub fn update_global_reference(
     reference: &mut Option<Position>,
     current_timestamp: f64,
 ) -> bool {
-    const ACTIVE_WINDOW: f64 = 300.0; // 5 minutes
-
     let lowest = aircraft
         .values()
-        .filter(|state| current_timestamp - state.timestamp < ACTIVE_WINDOW)
+        .filter(|state| {
+            current_timestamp - state.timestamp < ACTIVE_AIRCRAFT_WINDOW_S
+        })
         .filter_map(|state| state.pos.map(|pos| (state.last_altitude, pos)))
         .min_by(|a, b| match (a.0, b.0) {
             (None, None) => std::cmp::Ordering::Equal, // Both surface
@@ -557,7 +591,8 @@ pub fn decode_position(
                 return;
             }
 
-            if (timestamp - latest_timestamp).abs() < 30. {
+            if (timestamp - latest_timestamp).abs() < CPR_GLOBAL_MAX_TIME_DIFF_S
+            {
                 // First decoding based on odd/even (global)
                 // This is the most reasonable way to decode
                 pos = match latest_msg {
@@ -568,7 +603,9 @@ pub fn decode_position(
 
             // If failed try to use previous reference
             // This is tricky though, use with extra care
-            if pos.is_none() & ((timestamp - latest.timestamp) < 180.) {
+            if pos.is_none()
+                & ((timestamp - latest.timestamp) < CPR_LOCAL_MAX_AGE_S)
+            {
                 if let Some(latest_pos) = latest.pos {
                     pos = airborne_position_with_reference(
                         airborne,
@@ -589,14 +626,13 @@ pub fn decode_position(
                     // min gap) For longer gaps, trust global CPR decode - speed
                     // check would give false positives (e.g., after 2-hour gap,
                     // 5000km distance appears as 2500 km/h)
-                    if time_diff_seconds < 1800.0 {
-                        // 30 minutes
+                    if time_diff_seconds < SPEED_VALIDATION_MAX_GAP_S {
                         let time_diff_hours = time_diff_seconds / 3600.0;
                         if time_diff_hours > 0.0 {
                             let speed_kmh = distance / time_diff_hours;
                             // Reject positions requiring >1200 km/h
                             // Prevents GPS spoofing and position oscillations
-                            if speed_kmh > 1200.0 {
+                            if speed_kmh > MAX_AIRCRAFT_SPEED_KMH {
                                 pos = None;
                             }
                         }
@@ -607,8 +643,8 @@ pub fn decode_position(
                     // This check only applies when using stale reference
                     // For positions decoded via global CPR within 30s, skip this check
                     if pos.is_some()
-                        && distance > 500.
-                        && time_diff_seconds < 30.0
+                        && distance > MAX_POSITION_JUMP_KM
+                        && time_diff_seconds < CPR_GLOBAL_MAX_TIME_DIFF_S
                     {
                         pos = None
                     }
@@ -662,7 +698,8 @@ pub fn decode_position(
                     latest_pos.longitude,
                 );
                 if surface_pos.is_some()
-                    && dist_haversine(&latest_pos, &surface_pos.unwrap()) < 1.
+                    && dist_haversine(&latest_pos, &surface_pos.unwrap())
+                        < MAX_REFERENCE_DISTANCE_KM
                 {
                     pos = surface_pos;
                 }
@@ -679,7 +716,8 @@ pub fn decode_position(
                     // validate that the decoded position is near a known airport
                     if let Some(candidate) = candidate_pos {
                         if latest.pos.is_none() {
-                            if is_near_airport(&candidate, 10.0) {
+                            if is_near_airport(&candidate, AIRPORT_PROXIMITY_KM)
+                            {
                                 // Position is within 10km of an airport - accept it
                                 pos = Some(candidate);
                             }
@@ -704,7 +742,8 @@ pub fn decode_position(
                 latest.last_altitude = None;
                 // Find and store the nearest airport
                 if latest.airport.is_none() {
-                    latest.airport = find_nearest_airport(&pos, 10.0);
+                    latest.airport =
+                        find_nearest_airport(&pos, AIRPORT_PROXIMITY_KM);
                 }
             }
         }
