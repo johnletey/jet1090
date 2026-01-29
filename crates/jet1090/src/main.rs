@@ -476,11 +476,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (tx_dedup, mut rx_dedup) =
         tokio::sync::mpsc::channel(100 * multiplier + 1);
 
+    // Create shutdown signal channel for coordinated task termination
+    let (shutdown_tx, _shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
+
+    // Collect task handles for graceful shutdown
+    let mut source_handles = Vec::new();
+
     for source in options.sources.into_iter() {
         let serial = source.serial();
         let tx_copy = tx.clone();
         let source_name = source.name.clone();
-        source.receiver(tx_copy, serial, source_name);
+        let shutdown_rx = shutdown_tx.subscribe();
+        let handle = source.receiver(tx_copy, serial, source_name, shutdown_rx);
+        source_handles.push(handle);
     }
 
     // Conditionally spawn deduplication task
@@ -665,6 +673,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             break;
         }
     }
+
+    // Signal all source tasks to shut down
+    let _ = shutdown_tx.send(());
+
+    // Wait for all source tasks to finish with timeout
+    let timeout = Duration::from_secs(2);
+    for handle in source_handles {
+        let _ = tokio::time::timeout(timeout, handle).await;
+    }
+
     Ok(())
 }
 

@@ -548,13 +548,16 @@ impl Source {
      * Messages will have a serial number and a name attached.
      *
      * The next step will be deduplication.
+     *
+     * Returns a JoinHandle to the spawned task for graceful shutdown coordination.
      */
     pub fn receiver(
         &self,
         tx: Sender<TimedMessage>,
         serial: u64,
         name: Option<String>,
-    ) {
+        mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
+    ) -> tokio::task::JoinHandle<()> {
         match &self.address {
             #[cfg(feature = "rtlsdr")]
             Address::Rtlsdr(path) => {
@@ -600,9 +603,14 @@ impl Source {
                     let source = IqAsyncSource::from_device_config(&config)
                         .await
                         .expect("Failed to create RTL-SDR source");
-                    iqread::receiver(tx, source, serial, sample_rate, name)
-                        .await
-                });
+
+                    tokio::select! {
+                        _ = iqread::receiver(tx, source, serial, sample_rate, name) => {},
+                        _ = shutdown_rx.recv() => {
+                            // Silent shutdown
+                        }
+                    }
+                })
             }
             #[cfg(feature = "pluto")]
             Address::Pluto(pluto_path) => {
@@ -632,9 +640,14 @@ impl Source {
                     let source = IqAsyncSource::from_device_config(&config)
                         .await
                         .expect("Failed to create PlutoSDR source");
-                    iqread::receiver(tx, source, serial, sample_rate, name)
-                        .await
-                });
+
+                    tokio::select! {
+                        _ = iqread::receiver(tx, source, serial, sample_rate, name) => {},
+                        _ = shutdown_rx.recv() => {
+                            // Silent shutdown
+                        }
+                    }
+                })
             }
             #[cfg(feature = "soapy")]
             Address::Soapy(soapy_path) => {
@@ -660,9 +673,14 @@ impl Source {
                     let source = IqAsyncSource::from_device_config(&config)
                         .await
                         .expect("Failed to create SoapySDR source");
-                    iqread::receiver(tx, source, serial, sample_rate, name)
-                        .await
-                });
+
+                    tokio::select! {
+                        _ = iqread::receiver(tx, source, serial, sample_rate, name) => {},
+                        _ = shutdown_rx.recv() => {
+                            // Silent shutdown
+                        }
+                    }
+                })
             }
             #[cfg(feature = "sdr")]
             Address::File(file_path) => {
@@ -712,17 +730,21 @@ impl Source {
                     .await
                     .expect("Failed to open IQ file");
 
-                    iqread::file_receiver(
-                        tx,
-                        source,
-                        serial,
-                        sample_rate,
-                        base_timestamp,
-                        chunk_size,
-                        name,
-                    )
-                    .await
-                });
+                    tokio::select! {
+                        _ = iqread::file_receiver(
+                            tx,
+                            source,
+                            serial,
+                            sample_rate,
+                            base_timestamp,
+                            chunk_size,
+                            name,
+                        ) => {},
+                        _ = shutdown_rx.recv() => {
+                            // Silent shutdown
+                        }
+                    }
+                })
             }
             Address::Sero(sero) => {
                 #[cfg(not(feature = "sero"))]
@@ -731,15 +753,24 @@ impl Source {
                         "Compile jet1090 with the sero feature, {:?} argument ignored",
                         sero
                     );
+                    // Return a dummy task that completes immediately
+                    tokio::spawn(async move {})
                 }
                 #[cfg(feature = "sero")]
                 {
                     let client = sero::SeroClient::from(sero);
                     tokio::spawn(async move {
-                        if let Err(e) = sero::receiver(client, tx).await {
-                            error!("{}", e.to_string());
+                        tokio::select! {
+                            result = sero::receiver(client, tx) => {
+                                if let Err(e) = result {
+                                    error!("{}", e.to_string());
+                                }
+                            }
+                            _ = shutdown_rx.recv() => {
+                                // Silent shutdown
+                            }
                         }
-                    });
+                    })
                 }
             }
             _ => {
@@ -815,12 +846,17 @@ impl Source {
                     _ => unreachable!(),
                 };
                 tokio::spawn(async move {
-                    if let Err(e) =
-                        beast::receiver(server_address, tx, serial, name).await
-                    {
-                        error!("{}", e.to_string());
+                    tokio::select! {
+                        result = beast::receiver(server_address, tx, serial, name) => {
+                            if let Err(e) = result {
+                                error!("{}", e.to_string());
+                            }
+                        }
+                        _ = shutdown_rx.recv() => {
+                            // Silent shutdown
+                        }
                     }
-                });
+                })
             }
         }
     }
