@@ -44,8 +44,9 @@ jobs:
         # https://docs.npmjs.com/trusted-publishers
         # env:
         #   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
+        env:
           # The --provenance flag tells npm to use the GitHub OIDC token instead
-          # of requiring a manual token, and --access public ensures the package
-          # is published publicly.
-          npm publish --provenance --access public
+          # of requiring a manual token
+          NPM_CONFIG_PROVENANCE: true
+        run: |
+          npm publish
