@@ -4,13 +4,31 @@ use crossterm::terminal::*;
 use futures::{FutureExt, StreamExt};
 use ratatui::prelude::*;
 use std::io::{self, stdout, Stdout};
+use std::panic;
 use tokio::sync::mpsc;
 
 /// A type alias for the terminal type used in this application
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
 
-/// Initialize the terminal
+/// A guard that restores the terminal on drop
+/// This ensures the terminal is restored even if the program panics
+pub struct TerminalGuard;
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let _ = restore();
+    }
+}
+
+/// Initialize the terminal and set up panic hook for restoration
 pub fn init() -> io::Result<Tui> {
+    // Install custom panic hook to restore terminal before displaying panic
+    let original_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |panic_info| {
+        let _ = restore();
+        original_hook(panic_info);
+    }));
+
     execute!(stdout(), EnterAlternateScreen)?;
     enable_raw_mode()?;
     Terminal::new(CrosstermBackend::new(stdout()))

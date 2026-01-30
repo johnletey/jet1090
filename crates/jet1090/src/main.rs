@@ -370,11 +370,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut aircraft: BTreeMap<ICAO, AircraftState> = BTreeMap::new();
 
+    // Initialize terminal
     let terminal = if options.interactive {
         Some(tui::init()?)
     } else {
         None
     };
+
+    // Ensure terminal is restored on panic
+    let _terminal_guard = if terminal.is_some() {
+        Some(tui::TerminalGuard)
+    } else {
+        None
+    };
+
     let width = if let Some(terminal) = &terminal {
         terminal.size()?.width
     } else {
@@ -397,6 +406,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let shared_dec = shared.clone();
     let shared_web = shared.clone();
     let shared_exp = shared.clone();
+
+    // Handle signals (SIGINT, SIGTERM, SIGHUP) to ensure terminal restoration
+    if terminal.is_some() {
+        let shared_signal = shared.clone();
+        tokio::spawn(async move {
+            let mut sigint = tokio::signal::unix::signal(
+                // signal when process is interrupted (ctrl-c)
+                tokio::signal::unix::SignalKind::interrupt(),
+            )
+            .expect("Failed to create SIGINT handler");
+            let mut sigterm = tokio::signal::unix::signal(
+                // signal when process is terminated (kill -15)
+                tokio::signal::unix::SignalKind::terminate(),
+            )
+            .expect("Failed to create SIGTERM handler");
+            let mut sighup = tokio::signal::unix::signal(
+                // signal when terminal is disconnected
+                tokio::signal::unix::SignalKind::hangup(),
+            )
+            .expect("Failed to create SIGHUP handler");
+
+            tokio::select! {
+                _ = sigint.recv() => {},
+                _ = sigterm.recv() => {},
+                _ = sighup.recv() => {},
+            }
+
+            // Restore terminal and signal shutdown
+            tui::restore().ok();
+            shared_signal.should_quit.store(true, Ordering::Relaxed);
+        });
+    }
 
     // Create TUI-specific state (only for interactive mode)
     let app_tui = Arc::new(Mutex::new(Jet1090 {
