@@ -410,27 +410,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Handle signals (SIGINT, SIGTERM, SIGHUP) to ensure terminal restoration
     if terminal.is_some() {
         let shared_signal = shared.clone();
+
+        #[cfg(unix)]
         tokio::spawn(async move {
-            let mut sigint = tokio::signal::unix::signal(
-                // signal when process is interrupted (ctrl-c)
-                tokio::signal::unix::SignalKind::interrupt(),
-            )
-            .expect("Failed to create SIGINT handler");
-            let mut sigterm = tokio::signal::unix::signal(
-                // signal when process is terminated (kill -15)
-                tokio::signal::unix::SignalKind::terminate(),
-            )
-            .expect("Failed to create SIGTERM handler");
-            let mut sighup = tokio::signal::unix::signal(
-                // signal when terminal is disconnected
-                tokio::signal::unix::SignalKind::hangup(),
-            )
-            .expect("Failed to create SIGHUP handler");
+            use tokio::signal::unix::{signal, SignalKind};
+            // signal when process is interrupted (ctrl-c)
+            let mut sigint = signal(SignalKind::interrupt())
+                .expect("Failed to create SIGINT handler");
+            // signal when process is terminated (kill -15)
+            let mut sigterm = signal(SignalKind::terminate())
+                .expect("Failed to create SIGTERM handler");
+            // signal when terminal is disconnected
+            let mut sighup = signal(SignalKind::hangup())
+                .expect("Failed to create SIGHUP handler");
 
             tokio::select! {
                 _ = sigint.recv() => {},
                 _ = sigterm.recv() => {},
                 _ = sighup.recv() => {},
+            }
+
+            // Restore terminal and signal shutdown
+            tui::restore().ok();
+            shared_signal.should_quit.store(true, Ordering::Relaxed);
+        });
+
+        #[cfg(windows)]
+        tokio::spawn(async move {
+            use tokio::signal::windows::{
+                ctrl_c, ctrl_close, ctrl_logoff, ctrl_shutdown,
+            };
+
+            let mut sig_c = ctrl_c().expect("ctrl_c");
+            let mut sig_close = ctrl_close().expect("ctrl_close");
+            let mut sig_shutdown = ctrl_shutdown().expect("ctrl_shutdown");
+            let mut sig_logoff = ctrl_logoff().expect("ctrl_logoff");
+
+            tokio::select! {
+                _ = sig_c.recv() => {},
+                _ = sig_close.recv() => {},
+                _ = sig_shutdown.recv() => {},
+                _ = sig_logoff.recv() => {},
             }
 
             // Restore terminal and signal shutdown
