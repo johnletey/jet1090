@@ -2,6 +2,57 @@
 
 ## Unreleased
 
+## 0.5.1
+
+### Interactive Mode & Terminal Handling
+- **Terminal restoration on crash/panic**:
+  - Terminal now properly restores to normal state even when jet1090 crashes or panics
+  - Prevents terminal corruption requiring manual `reset` command
+  - Implementation using RAII drop guard pattern and panic hooks
+- **Signal handling improvements**:
+  - Graceful terminal restoration on SIGINT (Ctrl+C), SIGTERM (kill -15), and SIGHUP
+  - Terminal state is properly cleaned up when process is terminated
+  - Note: SIGKILL (kill -9) cannot be caught and will still require manual terminal reset
+
+### SDR & Demodulator
+- **6 MS/s demodulator support** (#444):
+  - Add support for 6 MS/s sample rate (RTL-SDR Blog V4 native rate)
+  - Refactor demodulator architecture for better maintainability
+  - Automatic sample rate detection and appropriate demodulator selection
+  - Improved performance and reduced CPU usage at higher sample rates
+
+### Core Improvements
+- **Graceful shutdown for async tasks**:
+  - Implement coordinated shutdown for all async source receivers
+  - Proper cleanup of SDR resources and network connections
+  - 2-second timeout for task termination to prevent hangs
+- **Code quality improvements**:
+  - Extract magic numbers to named constants in CPR and altitude decoding
+  - Improved code readability and maintainability
+
+### Bug Fixes
+- Fix redis publish timeout handling: retry instead of panic
+- Fix npm publish authentication issues
+- Implement `serde::Deserialize` for `TimedMessage`
+
+## 0.5.0
+
+### Interactive Mode Improvements
+- Fix timestamp ordering and TUI freezes (#438)
+  - Messages now processed in correct chronological order
+  - Eliminates TUI rendering freezes during high message rates
+- Add optional country flags column to TUI (#441)
+  - Enable with `--flags` CLI option or `flags = true` in config
+  - Visual country identification in aircraft table
+- Expand Malta ICAO24 allocation to 0x4d2fff (#440)
+
+### Build & Configuration
+- Faster builds for release profile
+- More default options in configuration files
+- Clean up CLI arguments
+- Remove unused `logging` feature from `deku` dependency (#442)
+- Improve documentation on SDR detection
+
 ### SDR Support & Configuration
 - **BREAKING**: Refactor SDR handling to use desperado 0.2.0 library (#416)
   - Unified device configuration with `DeviceConfig` pattern
