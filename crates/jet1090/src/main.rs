@@ -75,7 +75,6 @@ struct Options {
         long,
         env = "EXPIRE_AIRCRAFT",
         short = 'x',
-        default_value = "15",
         conflicts_with = "no_history_expire"
     )]
     history_expire: Option<u64>,
@@ -237,8 +236,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         options.serve_port = cli_options.serve_port;
     }
     if cli_options.no_history_expire {
+        options.no_history_expire = true;
         options.history_expire = None;
     } else if let Some(history_expire) = cli_options.history_expire {
+        options.no_history_expire = false;
         options.history_expire = Some(history_expire);
     }
     if cli_options.no_interactive_expire {
@@ -281,6 +282,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if options.stats {
         serialize_config(true);
+    }
+
+    if options.history_expire.is_none() && !options.no_history_expire {
+        options.history_expire = Some(15);
     }
 
     options.sources.append(&mut cli_options.sources);
