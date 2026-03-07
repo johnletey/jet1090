@@ -17,12 +17,12 @@ use desperado::airspy::{AirspyConfig, DeviceSelector as AirspyDeviceSelector};
 use desperado::rtlsdr::{DeviceSelector, RtlSdrConfig};
 #[cfg(feature = "soapy")]
 use desperado::soapy::SoapyConfig;
-#[cfg(feature = "sdr")]
-use desperado::IqAsyncSource;
 #[cfg(any(feature = "rtlsdr", feature = "soapy"))]
 use desperado::DeviceConfig;
 #[cfg(feature = "sdr")]
 use desperado::Gain;
+#[cfg(feature = "sdr")]
+use desperado::IqAsyncSource;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Sender;
 use tracing::error;
@@ -242,7 +242,11 @@ impl<'de> Deserialize<'de> for Source {
             gain: Option<Gain>,
             #[cfg(feature = "sdr")]
             sample_rate: Option<f64>,
-            #[cfg(any(feature = "rtlsdr", feature = "soapy", feature = "airspy"))]
+            #[cfg(any(
+                feature = "rtlsdr",
+                feature = "soapy",
+                feature = "airspy"
+            ))]
             bias_tee: Option<bool>,
             #[cfg(feature = "sdr")]
             iq_format: Option<String>,
@@ -279,7 +283,11 @@ impl<'de> Deserialize<'de> for Source {
             gain: helper.gain,
             #[cfg(feature = "sdr")]
             sample_rate: helper.sample_rate,
-            #[cfg(any(feature = "rtlsdr", feature = "soapy", feature = "airspy"))]
+            #[cfg(any(
+                feature = "rtlsdr",
+                feature = "soapy",
+                feature = "airspy"
+            ))]
             bias_tee: helper.bias_tee,
             #[cfg(feature = "sdr")]
             iq_format: helper.iq_format,
@@ -418,7 +426,8 @@ impl FromStr for Source {
                         device: Some(idx),
                         serial: None,
                     }
-                } else if let Some(serial) = device_str.strip_prefix("serial=") {
+                } else if let Some(serial) = device_str.strip_prefix("serial=")
+                {
                     AirspyDeviceConfig {
                         device: None,
                         serial: Some(serial.to_string()),
@@ -478,7 +487,11 @@ impl FromStr for Source {
             gain: None,
             #[cfg(feature = "sdr")]
             sample_rate: None,
-            #[cfg(any(feature = "rtlsdr", feature = "soapy", feature = "airspy"))]
+            #[cfg(any(
+                feature = "rtlsdr",
+                feature = "soapy",
+                feature = "airspy"
+            ))]
             bias_tee: None,
             #[cfg(feature = "sdr")]
             iq_format: None,
@@ -497,7 +510,11 @@ impl FromStr for Source {
                         source.gain = Some(Gain::Manual(gain_val));
                     }
                 }
-                #[cfg(any(feature = "rtlsdr", feature = "soapy", feature = "airspy"))]
+                #[cfg(any(
+                    feature = "rtlsdr",
+                    feature = "soapy",
+                    feature = "airspy"
+                ))]
                 if let Some(bias_str) = param.strip_prefix("bias_tee=") {
                     // Parse bias_tee value (true/false, 1/0, yes/no)
                     source.bias_tee = match bias_str.to_lowercase().as_str() {
@@ -695,8 +712,10 @@ impl Source {
                     };
 
                     let source = IqAsyncSource::Airspy(
-                        desperado::airspy::AsyncAirspySdrReader::new(&airspy_config)
-                            .expect("Failed to create Airspy source"),
+                        desperado::airspy::AsyncAirspySdrReader::new(
+                            &airspy_config,
+                        )
+                        .expect("Failed to create Airspy source"),
                     );
 
                     tokio::select! {
@@ -1006,7 +1025,8 @@ mod test {
                 }
             }
 
-            let source = Source::from_str("airspy://serial=0x35AC63DC2D8C7A4F?LFBO");
+            let source =
+                Source::from_str("airspy://serial=0x35AC63DC2D8C7A4F?LFBO");
             assert!(source.is_ok());
             if let Ok(Source {
                 address,
