@@ -8,6 +8,7 @@ from typing import (
     ParamSpec,
     Sequence,
     TypeVar,
+    cast,
     overload,
 )
 
@@ -209,7 +210,7 @@ def decode(
             ts = list(batched(timestamp, batch))
             payload = decode_1090t_vec(batches, ts, reference)
 
-    return pickle.loads(bytes(payload))  # type: ignore[no-any-return]
+    return pickle.loads(bytes(payload))
 
 
 @overload
@@ -243,25 +244,47 @@ def flarm(
     batch: int = 1000,
 ) -> Flarm | list[Flarm]:
     if isinstance(msg, str):
-        assert isinstance(timestamp, (int, float))
-        assert isinstance(reference_latitude, (int, float))
-        assert isinstance(reference_longitude, (int, float))
+        if not isinstance(timestamp, int):
+            raise ValueError(
+                "`timestamp` must be an integer for single-message FLARM decoding"
+            )
+        if not isinstance(reference_latitude, (int, float)):
+            raise ValueError(
+                "`reference_latitude` must be a float for single-message FLARM decoding"
+            )
+        if not isinstance(reference_longitude, (int, float)):
+            raise ValueError(
+                "`reference_longitude` must be a float for single-message FLARM decoding"
+            )
         payload = decode_flarm(
             msg,
             timestamp,
-            reference_latitude,
-            reference_longitude,
+            float(reference_latitude),
+            float(reference_longitude),
         )
     else:
         batches = list(batched(msg, batch))
-        assert not isinstance(timestamp, (int, float))
-        assert not isinstance(reference_latitude, (int, float))
-        assert not isinstance(reference_longitude, (int, float))
+        if isinstance(timestamp, int):
+            raise ValueError(
+                "`timestamp` must be a sequence for batch FLARM decoding"
+            )
+        if isinstance(reference_latitude, (int, float)):
+            raise ValueError(
+                "`reference_latitude` must be a sequence for batch FLARM decoding"
+            )
+        if isinstance(reference_longitude, (int, float)):
+            raise ValueError(
+                "`reference_longitude` must be a sequence for batch FLARM decoding"
+            )
 
-        t = list(batched(timestamp, batch))
-        reflat = list(batched(reference_latitude, batch))
-        reflon = list(batched(reference_longitude, batch))
+        timestamp_seq = cast(Sequence[int], timestamp)
+        reference_lat_seq = cast(Sequence[float], reference_latitude)
+        reference_lon_seq = cast(Sequence[float], reference_longitude)
+
+        t = list(batched(timestamp_seq, batch))
+        reflat = list(batched(reference_lat_seq, batch))
+        reflon = list(batched(reference_lon_seq, batch))
 
         payload = decode_flarm_vec(batches, t, reflat, reflon)
 
-    return pickle.loads(bytes(payload))  # type: ignore[no-any-return]
+    return pickle.loads(bytes(payload))

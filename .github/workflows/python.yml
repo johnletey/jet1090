@@ -51,6 +51,10 @@ jobs:
           uv run ruff check
           uv run ruff format --check
 
+      - name: Run type checker
+        working-directory: python
+        run: uv run ty check rs1090
+
       - name: Run tests
         working-directory: python
         run: |
