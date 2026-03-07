@@ -17,3 +17,8 @@ updates:
     directory: "/python/"
     schedule:
       interval: "monthly"
+
+  - package-ecosystem: "npm"
+    directory: "/crates/rs1090-wasm/tests/"
+    schedule:
+      interval: "monthly"
