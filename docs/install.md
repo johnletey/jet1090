@@ -48,7 +48,7 @@ The latest release and installation instructions are published [on GitHub Releas
 
 ## Dependencies
 
-The prebuilt binaries are compiled with all features activated. In particular, support for RTL-SDR is provided through SoapySDR which may require extra dependencies.
+The prebuilt binaries are compiled with all features activated. In particular, SoapySDR-based sources may require extra dependencies.
 
 === "Ubuntu"
 
@@ -81,7 +81,7 @@ The prebuilt binaries are compiled with all features activated. In particular, s
 
     You will need:
 
-    - the SoapySDR dependencies to compile with the `rtlsdr` feature.
+    - the SoapySDR dependencies to compile with the `soapy` feature.
     - a protobuf compiler to compile with the `sero` feature.
 
     ```sh

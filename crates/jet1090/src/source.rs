@@ -11,16 +11,18 @@ use rs1090::source::sero;
 #[cfg(feature = "ssh")]
 use rs1090::source::ssh::{TunnelledTcp, TunnelledWebsocket};
 
-#[cfg(feature = "pluto")]
-use desperado::pluto::PlutoConfig;
+#[cfg(feature = "airspy")]
+use desperado::airspy::{AirspyConfig, DeviceSelector as AirspyDeviceSelector};
 #[cfg(feature = "rtlsdr")]
 use desperado::rtlsdr::{DeviceSelector, RtlSdrConfig};
 #[cfg(feature = "soapy")]
 use desperado::soapy::SoapyConfig;
 #[cfg(feature = "sdr")]
 use desperado::IqAsyncSource;
+#[cfg(any(feature = "rtlsdr", feature = "soapy"))]
+use desperado::DeviceConfig;
 #[cfg(feature = "sdr")]
-use desperado::{DeviceConfig, Gain};
+use desperado::Gain;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Sender;
 use tracing::error;
@@ -33,9 +35,6 @@ const RATE_2_4M: f64 = 2.4e6;
 
 #[cfg(feature = "rtlsdr")]
 const RTLSDR_GAIN: f64 = 49.6;
-
-#[cfg(feature = "pluto")]
-const PLUTO_GAIN: f64 = 73.0;
 
 /**
 * A structure to describe the endpoint to access data.
@@ -122,13 +121,26 @@ pub struct RtlSdrDeviceConfig {
     pub product: Option<String>,
 }
 
-/// Helper struct for deserializing PlutoSDR configuration from TOML
-#[cfg(feature = "pluto")]
+/// Structured Airspy device configuration for TOML
+#[cfg(feature = "airspy")]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct PlutoPath {
-    /// PlutoSDR URI (IP address, USB device, or full URI like "ip:192.168.2.1" or "usb:1")
-    pub pluto: String,
+pub struct AirspyPath {
+    #[serde(flatten)]
+    pub config: AirspyDeviceConfig,
+}
+
+/// Airspy device configuration fields
+#[cfg(feature = "airspy")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AirspyDeviceConfig {
+    /// Device index (0, 1, 2, ...)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device: Option<usize>,
+    /// Serial number filter (decimal or hex, e.g. "1234" or "0x4d2")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub serial: Option<String>,
 }
 
 /// Helper struct for deserializing SoapySDR configuration from TOML
@@ -163,9 +175,9 @@ pub enum Address {
     /// An RTL-SDR device, e.g. `rtlsdr://` or `rtlsdr://serial=00000001`
     #[cfg(feature = "rtlsdr")]
     Rtlsdr(RtlSdrPath),
-    /// A PlutoSDR device, e.g. `pluto://192.168.2.1` or `pluto://ip:192.168.2.1` or `pluto://usb:1`
-    #[cfg(feature = "pluto")]
-    Pluto(PlutoPath),
+    /// An Airspy device, e.g. `airspy://` or `airspy://serial=0x35AC63DC2D8C7A4F`
+    #[cfg(feature = "airspy")]
+    Airspy(AirspyPath),
     /// A SoapySDR device, e.g. `soapy://driver=rtlsdr`
     #[cfg(feature = "soapy")]
     Soapy(SoapyPath),
@@ -194,14 +206,14 @@ pub struct Source {
     pub airport: Option<String>,
     /// Localize the source of data, altitude (in m, WGS84 height)
     pub altitude: Option<f64>,
-    /// Gain setting for SDR devices (RTL-SDR default: 49.6, PlutoSDR default: 73.0)
+    /// Gain setting for SDR devices (RTL-SDR/Soapy default: 49.6, Airspy default: auto)
     #[cfg(feature = "sdr")]
     pub gain: Option<Gain>,
     /// Sample rate in Hz (2.4e6 or 6.0e6, default: 2.4e6)
     #[cfg(feature = "sdr")]
     pub sample_rate: Option<f64>,
     /// Enable bias-tee to power external LNA (RTL-SDR and SoapySDR, default: false)
-    #[cfg(any(feature = "rtlsdr", feature = "soapy"))]
+    #[cfg(any(feature = "rtlsdr", feature = "soapy", feature = "airspy"))]
     pub bias_tee: Option<bool>,
     /// IQ file format (cu8, cs8, cs16, default: cu8 for RTL-SDR compatibility)
     #[cfg(feature = "sdr")]
@@ -230,7 +242,7 @@ impl<'de> Deserialize<'de> for Source {
             gain: Option<Gain>,
             #[cfg(feature = "sdr")]
             sample_rate: Option<f64>,
-            #[cfg(any(feature = "rtlsdr", feature = "soapy"))]
+            #[cfg(any(feature = "rtlsdr", feature = "soapy", feature = "airspy"))]
             bias_tee: Option<bool>,
             #[cfg(feature = "sdr")]
             iq_format: Option<String>,
@@ -267,7 +279,7 @@ impl<'de> Deserialize<'de> for Source {
             gain: helper.gain,
             #[cfg(feature = "sdr")]
             sample_rate: helper.sample_rate,
-            #[cfg(any(feature = "rtlsdr", feature = "soapy"))]
+            #[cfg(any(feature = "rtlsdr", feature = "soapy", feature = "airspy"))]
             bias_tee: helper.bias_tee,
             #[cfg(feature = "sdr")]
             iq_format: helper.iq_format,
@@ -298,6 +310,19 @@ fn build_serial(input: &str) -> u64 {
     input.hash(&mut hasher);
     // Get the hash as a u64
     hasher.finish()
+}
+
+#[cfg(feature = "airspy")]
+fn parse_airspy_serial(value: &str) -> Result<u64, String> {
+    if let Some(hex) = value.strip_prefix("0x") {
+        return u64::from_str_radix(hex, 16)
+            .map_err(|_| format!("Invalid Airspy serial (hex): '{value}'"));
+    }
+
+    value
+        .parse::<u64>()
+        .or_else(|_| u64::from_str_radix(value, 16))
+        .map_err(|_| format!("Invalid Airspy serial: '{value}'"))
 }
 
 impl FromStr for Source {
@@ -378,24 +403,40 @@ impl FromStr for Source {
 
                 Address::Rtlsdr(RtlSdrPath { config })
             }
-            #[cfg(feature = "pluto")]
-            "pluto" => {
-                // pluto://192.168.2.1 -> just the IP
-                // pluto://ip:192.168.2.1 -> ip:192.168.2.1
-                // pluto:///usb:1.18.5 -> usb:1.18.5 (triple slash for URIs with colons)
-                let uri = match url.host_str() {
-                    Some(host) if !host.is_empty() => host.to_string(),
-                    _ => {
-                        // No host, try path component (for pluto:///usb:1.18.5)
-                        let path = url.path();
-                        if path.starts_with('/') && path.len() > 1 {
-                            path[1..].to_string()
-                        } else {
-                            return Err("pluto:// requires a URI (IP address, ip:address, or usb:device). Use pluto:///usb:1.18.5 for USB devices with version numbers.".to_string());
-                        }
+            #[cfg(feature = "airspy")]
+            "airspy" => {
+                // Parse CLI argument and convert to structured config
+                let device_str = url.host_str().unwrap_or("");
+
+                let config = if device_str.is_empty() {
+                    AirspyDeviceConfig {
+                        device: Some(0),
+                        serial: None,
+                    }
+                } else if let Ok(idx) = device_str.parse::<usize>() {
+                    AirspyDeviceConfig {
+                        device: Some(idx),
+                        serial: None,
+                    }
+                } else if let Some(serial) = device_str.strip_prefix("serial=") {
+                    AirspyDeviceConfig {
+                        device: None,
+                        serial: Some(serial.to_string()),
+                    }
+                } else {
+                    eprintln!(
+                        "WARNING: Unrecognized Airspy device format: '{}'\n\
+                         Expected device index (0, 1, 2, ...) or 'serial=...'.\n\
+                         Defaulting to device 0.",
+                        device_str
+                    );
+                    AirspyDeviceConfig {
+                        device: Some(0),
+                        serial: None,
                     }
                 };
-                Address::Pluto(PlutoPath { pluto: uri })
+
+                Address::Airspy(AirspyPath { config })
             }
             #[cfg(feature = "soapy")]
             "soapy" => {
@@ -437,7 +478,7 @@ impl FromStr for Source {
             gain: None,
             #[cfg(feature = "sdr")]
             sample_rate: None,
-            #[cfg(any(feature = "rtlsdr", feature = "soapy"))]
+            #[cfg(any(feature = "rtlsdr", feature = "soapy", feature = "airspy"))]
             bias_tee: None,
             #[cfg(feature = "sdr")]
             iq_format: None,
@@ -456,7 +497,7 @@ impl FromStr for Source {
                         source.gain = Some(Gain::Manual(gain_val));
                     }
                 }
-                #[cfg(any(feature = "rtlsdr", feature = "soapy"))]
+                #[cfg(any(feature = "rtlsdr", feature = "soapy", feature = "airspy"))]
                 if let Some(bias_str) = param.strip_prefix("bias_tee=") {
                     // Parse bias_tee value (true/false, 1/0, yes/no)
                     source.bias_tee = match bias_str.to_lowercase().as_str() {
@@ -531,9 +572,16 @@ impl Source {
                 };
                 build_serial(&format!("rtlsdr:{}", device_str))
             }
-            #[cfg(feature = "pluto")]
-            Address::Pluto(pluto_path) => {
-                build_serial(&format!("pluto:{}", pluto_path.pluto))
+            #[cfg(feature = "airspy")]
+            Address::Airspy(path) => {
+                let device_str = if let Some(idx) = path.config.device {
+                    idx.to_string()
+                } else if let Some(ref serial) = path.config.serial {
+                    format!("serial={serial}")
+                } else {
+                    "0".to_string()
+                };
+                build_serial(&format!("airspy:{device_str}"))
             }
             #[cfg(feature = "soapy")]
             Address::Soapy(soapy_path) => {
@@ -612,34 +660,44 @@ impl Source {
                     }
                 })
             }
-            #[cfg(feature = "pluto")]
-            Address::Pluto(pluto_path) => {
-                let mut uri = pluto_path.pluto.clone();
+            #[cfg(feature = "airspy")]
+            Address::Airspy(path) => {
+                let config = &path.config;
+                let device = if let Some(idx) = config.device {
+                    AirspyDeviceSelector::Index(idx)
+                } else if let Some(ref serial) = config.serial {
+                    match parse_airspy_serial(serial) {
+                        Ok(value) => AirspyDeviceSelector::Serial(value),
+                        Err(message) => {
+                            eprintln!("WARNING: {message}. Defaulting to Airspy device 0.");
+                            AirspyDeviceSelector::Index(0)
+                        }
+                    }
+                } else {
+                    AirspyDeviceSelector::Index(0)
+                };
 
-                // The pluto-sdr library requires URIs in the format "ip:..." or "usb:..."
-                // If the URI doesn't already have a prefix, assume it's an IP and add "ip:"
-                if !uri.starts_with("ip:") && !uri.starts_with("usb:") {
-                    uri = format!("ip:{}", uri);
-                }
-
-                // Use gain from config or default to 50.0 for PlutoSDR
-                let gain =
-                    self.gain.clone().unwrap_or(Gain::Manual(PLUTO_GAIN));
-
-                // Use sample_rate from config or default to 2.4 MS/s
-                let sample_rate = self.sample_rate.unwrap_or(RATE_2_4M);
+                let gain = self.gain.clone().unwrap_or(Gain::Auto);
+                let sample_rate = self.sample_rate.unwrap_or(6.0e6);
+                let bias_tee = self.bias_tee.unwrap_or(false);
 
                 tokio::spawn(async move {
-                    let pluto_config = PlutoConfig {
-                        uri,
-                        center_freq: MODES_FREQ as i64,
-                        sample_rate: sample_rate as i64,
+                    let airspy_config = AirspyConfig {
+                        device,
+                        center_freq: MODES_FREQ as u32,
+                        sample_rate: sample_rate as u32,
                         gain,
+                        bias_tee,
+                        packing: false,
+                        lna_gain: None,
+                        mixer_gain: None,
+                        vga_gain: None,
                     };
-                    let config = DeviceConfig::Pluto(pluto_config);
-                    let source = IqAsyncSource::from_device_config(&config)
-                        .await
-                        .expect("Failed to create PlutoSDR source");
+
+                    let source = IqAsyncSource::Airspy(
+                        desperado::airspy::AsyncAirspySdrReader::new(&airspy_config)
+                            .expect("Failed to create Airspy source"),
+                    );
 
                     tokio::select! {
                         _ = iqread::receiver(tx, source, serial, sample_rate, name) => {},
@@ -929,90 +987,45 @@ mod test {
             }
         }
 
-        #[cfg(feature = "pluto")]
+        #[cfg(feature = "airspy")]
         {
-            // Test PlutoSDR with IP address
-            let source = Source::from_str("pluto://192.168.2.1");
+            let source = Source::from_str("airspy:");
             assert!(source.is_ok());
             if let Ok(Source { address, .. }) = source {
-                match address {
-                    Address::Pluto(path) => {
-                        assert_eq!(path.pluto, "192.168.2.1");
-                    }
-                    _ => unreachable!(),
-                }
+                assert!(matches!(address, Address::Airspy(_)));
             }
 
-            // Test PlutoSDR with hostname
-            let source = Source::from_str("pluto://pluto.local");
-            assert!(
-                source.is_ok(),
-                "Failed to parse pluto://pluto.local: {:?}",
-                source.err()
-            );
-            if let Ok(Source { address, .. }) = source {
-                match address {
-                    Address::Pluto(path) => {
-                        assert_eq!(path.pluto, "pluto.local");
-                    }
-                    _ => unreachable!(),
-                }
-            }
-
-            // Test PlutoSDR with explicit ip: prefix (use triple slash for URIs with colons)
-            let source = Source::from_str("pluto:///ip:192.168.2.1");
-            assert!(
-                source.is_ok(),
-                "Failed to parse pluto:///ip:192.168.2.1: {:?}",
-                source.err()
-            );
-            if let Ok(Source { address, .. }) = source {
-                match address {
-                    Address::Pluto(path) => {
-                        assert_eq!(path.pluto, "ip:192.168.2.1");
-                    }
-                    _ => unreachable!(),
-                }
-            }
-
-            // Test PlutoSDR with explicit ip: prefix and hostname
-            let source = Source::from_str("pluto:///ip:pluto.local");
-            assert!(
-                source.is_ok(),
-                "Failed to parse pluto:///ip:pluto.local: {:?}",
-                source.err()
-            );
-            if let Ok(Source { address, .. }) = source {
-                match address {
-                    Address::Pluto(path) => {
-                        assert_eq!(path.pluto, "ip:pluto.local");
-                    }
-                    _ => unreachable!(),
-                }
-            }
-
-            // Test PlutoSDR with USB using triple slash (for URIs with colons)
-            let source = Source::from_str("pluto:///usb:1.18.5");
+            let source = Source::from_str("airspy://1");
             assert!(source.is_ok());
             if let Ok(Source { address, .. }) = source {
-                match address {
-                    Address::Pluto(path) => {
-                        assert_eq!(path.pluto, "usb:1.18.5");
-                    }
-                    _ => unreachable!(),
+                if let Address::Airspy(path) = address {
+                    assert_eq!(path.config.device, Some(1));
+                    assert_eq!(path.config.serial, None);
+                } else {
+                    unreachable!();
                 }
             }
 
-            // Test PlutoSDR with simple USB
-            let source = Source::from_str("pluto:///usb:");
+            let source = Source::from_str("airspy://serial=0x35AC63DC2D8C7A4F?LFBO");
             assert!(source.is_ok());
-            if let Ok(Source { address, .. }) = source {
-                match address {
-                    Address::Pluto(path) => {
-                        assert_eq!(path.pluto, "usb:");
-                    }
-                    _ => unreachable!(),
+            if let Ok(Source {
+                address,
+                latitude,
+                longitude,
+                ..
+            }) = source
+            {
+                if let Address::Airspy(path) = address {
+                    assert_eq!(
+                        path.config.serial,
+                        Some("0x35AC63DC2D8C7A4F".to_string())
+                    );
+                    assert_eq!(path.config.device, None);
+                } else {
+                    unreachable!();
                 }
+                assert_eq!(latitude, Some(43.628101));
+                assert_eq!(longitude, Some(1.367263));
             }
         }
 
@@ -1134,42 +1147,33 @@ mod test {
             }
         }
 
-        // Test PlutoSDR deserialization
-        #[cfg(feature = "pluto")]
+        #[cfg(feature = "airspy")]
         {
-            // Test IP address format
             let toml = r#"
-                name = "my-pluto"
-                pluto = "192.168.2.1"
+                airspy = { device = 0 }
+                latitude = 43.5993189
+                longitude = 1.4362472
             "#;
-            let source: Source =
-                toml::from_str(toml).expect("Failed to parse TOML");
-            assert!(matches!(source.address, Address::Pluto(_)));
-            if let Address::Pluto(path) = &source.address {
-                assert_eq!(path.pluto, "192.168.2.1");
-            }
-            assert_eq!(source.name, Some("my-pluto".to_string()));
-
-            // Test ip: prefix format
-            let toml = r#"
-                pluto = "ip:192.168.2.1"
-            "#;
-            let source: Source =
-                toml::from_str(toml).expect("Failed to parse TOML");
-            assert!(matches!(source.address, Address::Pluto(_)));
-            if let Address::Pluto(path) = &source.address {
-                assert_eq!(path.pluto, "ip:192.168.2.1");
+            let source: Source = toml::from_str(toml)
+                .expect("Failed to parse Airspy TOML with device");
+            assert!(matches!(source.address, Address::Airspy(_)));
+            if let Address::Airspy(path) = &source.address {
+                assert_eq!(path.config.device, Some(0));
+                assert_eq!(path.config.serial, None);
             }
 
-            // Test usb: format
             let toml = r#"
-                pluto = "usb:"
+                airspy = { serial = "0x35AC63DC2D8C7A4F" }
             "#;
-            let source: Source =
-                toml::from_str(toml).expect("Failed to parse TOML");
-            assert!(matches!(source.address, Address::Pluto(_)));
-            if let Address::Pluto(path) = &source.address {
-                assert_eq!(path.pluto, "usb:");
+            let source: Source = toml::from_str(toml)
+                .expect("Failed to parse Airspy TOML with serial");
+            assert!(matches!(source.address, Address::Airspy(_)));
+            if let Address::Airspy(path) = &source.address {
+                assert_eq!(path.config.device, None);
+                assert_eq!(
+                    path.config.serial,
+                    Some("0x35AC63DC2D8C7A4F".to_string())
+                );
             }
         }
 

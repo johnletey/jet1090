@@ -61,9 +61,36 @@ Allocating 15 zero-copy buffers
     jet1090 rtlsdr://serial=00000001 rtlsdr://serial=00000002
     ```
 
+## Airspy devices
+
+`jet1090` must be [compiled with the `airspy` feature](install.md) to support [Airspy Mini](https://airspy.com/airspy-mini/), [Airspy R2](https://airspy.com/airspy-r2/) or [Airspy HF+](https://airspy.com/airspy-hf-discovery/) devices.
+
+![airspy mini dongle](images/airspy_mini.png){: style="height:150px"}
+
+Before running `jet1090`, verify your Airspy is detected:
+
+```sh
+airspy_info
+```
+
+Once verified, start decoding:
+
+```sh
+# Default device (index 0)
+jet1090 --verbose airspy://
+
+# Explicit device index
+jet1090 --verbose airspy://1
+
+# By serial
+jet1090 --verbose airspy://serial=0x35AC63DC2D8C7A4F
+```
+
+For more details on Airspy configuration options, see the [configuration documentation](config.md#sources).
+
 ## SoapySDR devices
 
-`jet1090` must be [compiled with the `soapy` feature](install.md) to support SoapySDR-compatible devices (HackRF, LimeSDR, etc.).
+`jet1090` must be [compiled with the `soapy` feature](install.md) to support SoapySDR-compatible devices (HackRF, LimeSDR, PlutoSDR, etc.).
 
 Before running `jet1090`, verify your SoapySDR device is detected:
 
@@ -80,38 +107,10 @@ Once verified, start decoding:
 ```sh
 jet1090 --verbose soapy://driver=rtlsdr
 jet1090 --verbose soapy://driver=hackrf
+jet1090 --verbose soapy://driver=plutosdr
 ```
 
 For more details on SoapySDR configuration options, see the [configuration documentation](config.md#soapysdr).
-
-## PlutoSDR devices
-
-`jet1090` must be [compiled with the `pluto` feature](install.md) to support Adalm-Pluto SDR devices.
-
-Before running `jet1090`, verify your PlutoSDR is accessible:
-
-```sh
-# For network-connected PlutoSDR
-iio_info -n 192.168.2.1
-
-# Or access the web interface
-# Navigate to http://pluto.local in your browser
-```
-
-Once verified, start decoding:
-
-```sh
-# By IP address
-jet1090 --verbose pluto://192.168.2.1
-
-# By hostname
-jet1090 --verbose pluto://pluto.local
-
-# By USB (if connected via USB)
-jet1090 --verbose pluto:///usb:
-```
-
-For more details on PlutoSDR configuration options, see the [configuration documentation](config.md#plutosdr).
 
 ## Beast format
 

@@ -25,7 +25,7 @@ pr-run-mode = "plan"
 publish-jobs = ["homebrew"]
 # Whether to pass --all-features to cargo build
 # all-features = true
-features = ["rtlsdr", "sero", "ssh"]
+features = ["rtlsdr", "airspy", "sero", "ssh"]
 # Path that installers should place binaries in
 install-path = "CARGO_HOME"
 # Whether to install an updater program

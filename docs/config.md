@@ -120,7 +120,7 @@ airport = "EHAM"
 
     Default gain values:
     - **RTL-SDR**: 49.6 dB (optimized for ADS-B reception)
-    - **PlutoSDR**: 73.0 dB
+    - **Airspy**: auto gain
     - **SoapySDR**: 49.6 dB (same as RTL-SDR)
 
     If not specified, the default value for each device type will be used.
@@ -195,84 +195,33 @@ airport = "EHAM"
 
 The `airport` parameter replaces the `latitude` and `longitude` parameter if they are not present.
 
-### PlutoSDR
+### Airspy
 
-PlutoSDR devices can be configured via IP, hostname, or USB connection.
-
-**Note**: The PlutoSDR library requires URIs in the format `ip:address` or `usb:device`. When you provide a simple IP address or hostname (e.g., `192.168.2.1` or `pluto.local`), jet1090 automatically adds the `ip:` prefix.
-
-For IP connection (most common):
+Airspy devices can be selected by index or serial number:
 
 ```toml
 [[sources]]
-name = "pluto"
-pluto = "192.168.2.1"
-latitude = 43.5993189
-longitude = 1.4362472
-altitude = 151.0
-```
-
-For hostname-based connection:
-
-```toml
-[[sources]]
-name = "pluto"
-pluto = "pluto.local"
-airport = "LFBO"
-```
-
-You can also use the explicit `ip:` prefix with IP addresses or hostnames:
-
-```toml
-[[sources]]
-name = "pluto"
-pluto = "ip:192.168.2.1"
+name = "airspy-default"
+airspy = { device = 0 }
+sample_rate = 6.0e6
 airport = "LFBO"
 ```
 
 ```toml
 [[sources]]
-name = "pluto"
-pluto = "ip:pluto.local"
+name = "airspy-by-serial"
+airspy = { serial = "0x35AC63DC2D8C7A4F" }
+sample_rate = 6.0e6
 airport = "LFBO"
 ```
 
-For USB-connected PlutoSDR:
+!!! note "Command-line Usage"
 
-```toml
-[[sources]]
-name = "pluto"
-pluto = "usb:"
-airport = "EHAM"
-```
-
-Or with a specific USB device (for USB devices with version numbers like `usb:1.18.5`, use command-line format `pluto:///usb:1.18.5`):
-
-```toml
-[[sources]]
-name = "pluto"
-pluto = "usb:1.18.5"
-airport = "EHAM"
-```
-
-!!! tip "Command-line formats"
-
-    When specifying PlutoSDR devices from the command line:
-    
     ```bash
-    # IP address or hostname (simple format - ip: prefix added automatically)
-    jet1090 pluto://192.168.2.1
-    jet1090 pluto://pluto.local
-    
-    # With explicit ip: prefix (use triple slashes for URIs with colons)
-    jet1090 pluto:///ip:192.168.2.1
-    jet1090 pluto:///ip:pluto.local
-    
-    # USB device (use triple slashes for URIs with colons)
-    jet1090 pluto:///usb:1.7.5
+    jet1090 airspy://
+    jet1090 airspy://1
+    jet1090 airspy://serial=0x35AC63DC2D8C7A4F
     ```
-    
-    In TOML configuration files, you can use the URI directly without the triple slashes.
 
 ### SoapySDR
 
@@ -304,6 +253,15 @@ name = "soapy-hackrf"
 soapy = "driver=hackrf"
 latitude = 51.4706
 longitude = -0.4619
+```
+
+For PlutoSDR through SoapySDR:
+
+```toml
+[[sources]]
+name = "soapy-pluto"
+soapy = "driver=plutosdr"
+airport = "LFBO"
 ```
 
 ### IQ File (Offline Decoding)
