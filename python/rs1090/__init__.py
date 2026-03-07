@@ -11,8 +11,6 @@ from typing import (
     overload,
 )
 
-import pandas as pd
-
 from ._rust import (
     aircraft_information,
     decode_1090,
@@ -171,8 +169,8 @@ def decode(
 
 @overload
 def decode(
-    msg: list[str] | pd.Series,
-    timestamp: None | Sequence[float] | pd.Series = None,
+    msg: list[str],
+    timestamp: None | Sequence[float] = None,
     *,
     reference: None | tuple[float, float] = None,
     batch: int = 1000,
@@ -180,8 +178,8 @@ def decode(
 
 
 def decode(
-    msg: str | list[str] | pd.Series,
-    timestamp: None | float | Sequence[float] | pd.Series = None,
+    msg: str | Sequence[str],
+    timestamp: None | float | Sequence[float] = None,
     *,
     reference: None | tuple[float, float] = None,
     batch: int = 1000,

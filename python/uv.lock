@@ -996,7 +996,6 @@ wheels = [
 name = "rs1090"
 source = { editable = "." }
 dependencies = [
-    { name = "pandas" },
     { name = "typing-extensions" },
 ]
 
@@ -1004,6 +1003,7 @@ dependencies = [
 dev = [
     { name = "ipykernel" },
     { name = "mypy" },
+    { name = "pandas" },
     { name = "pip" },
     { name = "pyarrow" },
     { name = "pytest" },
@@ -1011,15 +1011,13 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "pandas", specifier = ">=2.2.0" },
-    { name = "typing-extensions", specifier = ">=4.10.0" },
-]
+requires-dist = [{ name = "typing-extensions", specifier = ">=4.10.0" }]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "ipykernel", specifier = ">=6.29.5" },
     { name = "mypy", specifier = ">=1.8.0" },
+    { name = "pandas", specifier = ">=2.2.0" },
     { name = "pip" },
     { name = "pyarrow", specifier = ">=22.0.0" },
     { name = "pytest", specifier = ">=8.0.2" },

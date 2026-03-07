@@ -3,7 +3,7 @@ name = "rs1090"
 requires-python = ">=3.10"
 readme = "readme.md"
 license = "MIT"
-dependencies = ["pandas>=2.2.0", "typing_extensions>=4.10.0"]
+dependencies = ["typing_extensions>=4.10.0"]
 classifiers = [
   "Programming Language :: Rust",
   "Programming Language :: Python :: Implementation :: CPython",
@@ -19,7 +19,7 @@ module-name = "rs1090._rust"
 features = ["pyo3/extension-module"]
 
 [dependency-groups]
-dev = ["ipykernel>=6.29.5", "mypy>=1.8.0", "pip", "pyarrow>=22.0.0", "pytest>=8.0.2", "ruff>=0.3.0"]
+dev = ["ipykernel>=6.29.5", "mypy>=1.8.0", "pandas>=2.2.0", "pip", "pyarrow>=22.0.0", "pytest>=8.0.2", "ruff>=0.3.0"]
 
 [tool.ruff]
 line-length = 80
