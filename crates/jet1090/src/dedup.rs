@@ -1,6 +1,8 @@
+use crate::metrics::Metrics;
 use rs1090::prelude::*;
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
+use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::mpsc;
 use tracing::info;
@@ -25,6 +27,7 @@ pub async fn deduplicate_messages(
     tx: mpsc::Sender<TimedMessage>,
     dedup_threshold: u32,
     reorder_window: u32,
+    metrics: Arc<Metrics>,
 ) {
     let mut cache: HashMap<Vec<u8>, Vec<TimedMessage>> = HashMap::new();
     let mut expiration_heap: BinaryHeap<Reverse<(u128, Vec<u8>)>> =
@@ -36,6 +39,8 @@ pub async fn deduplicate_messages(
     let reorder_window_enabled = reorder_window > 0;
 
     while let Some(msg) = rx.recv().await {
+        metrics.record_received();
+
         let timestamp_ms = (msg.timestamp * 1e3) as u128;
         let frame = msg.frame.clone();
 
@@ -84,24 +89,35 @@ pub async fn deduplicate_messages(
                     .expect("SystemTime before unix epoch")
                     .as_secs_f64();
 
-                if let Ok((_, msg)) = Message::from_bytes((&tmsg.frame, 0)) {
-                    tmsg.decode_time = Some(
-                        SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .expect("SystemTime before unix epoch")
-                            .as_secs_f64()
-                            - start,
-                    );
-                    tmsg.message = Some(msg);
+                metrics.record_after_dedup();
 
-                    // Add to emission buffer instead of sending directly
-                    if reorder_window_enabled {
-                        emission_buffer.push(tmsg);
-                    } else {
-                        // If reordering disabled, send immediately (lower latency)
-                        if let Err(e) = tx.send(tmsg).await {
-                            info!("Failed to send deduplicated entries: {}", e);
+                match Message::from_bytes((&tmsg.frame, 0)) {
+                    Ok((_, msg)) => {
+                        tmsg.decode_time = Some(
+                            SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .expect("SystemTime before unix epoch")
+                                .as_secs_f64()
+                                - start,
+                        );
+                        tmsg.message = Some(msg);
+                        metrics.record_decode_success();
+
+                        // Add to emission buffer instead of sending directly
+                        if reorder_window_enabled {
+                            emission_buffer.push(tmsg);
+                        } else {
+                            // If reordering disabled, send immediately (lower latency)
+                            if let Err(e) = tx.send(tmsg).await {
+                                info!(
+                                    "Failed to send deduplicated entries: {}",
+                                    e
+                                );
+                            }
                         }
+                    }
+                    Err(_) => {
+                        metrics.record_decode_error();
                     }
                 }
             }

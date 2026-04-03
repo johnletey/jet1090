@@ -84,6 +84,15 @@ pub async fn sensors(
     Ok::<_, Infallible>(warp::reply::json(&shared.sensors))
 }
 
+/// Returns runtime metrics for the decode pipeline
+pub async fn metrics(
+    shared: &Arc<SharedState>,
+) -> Result<warp::reply::Json, Infallible> {
+    let aircraft_count = shared.state_vectors.read().await.len();
+    let snapshot = shared.metrics.snapshot(aircraft_count);
+    Ok::<_, Infallible>(warp::reply::json(&snapshot))
+}
+
 /// Returns a list of poential airports matching the query string
 pub async fn airports(query: Query) -> Result<warp::reply::Json, Infallible> {
     let lowercase = query.q.to_lowercase();
@@ -113,7 +122,8 @@ pub async fn handle_rejection(
         message = "Route not found, try one of /,\n\
             /all,\n\
             /track?icao24={icao24},\n\
-            /sensors or\n\
+            /sensors,\n\
+            /metrics or\n\
             /airport?q={string}";
     } else if err.find::<warp::reject::MethodNotAllowed>().is_some() {
         code = StatusCode::METHOD_NOT_ALLOWED;
@@ -146,6 +156,7 @@ pub async fn serve_web_api(shared: Arc<SharedState>, port: u16) {
             <li>/track?icao24={icao24}&since={timestamp}: returns the trajectory of a given aircraft since the given timestamp (optional)</li>\
             <li><a href=\"/sensors\">/sensors</a>: returns information about all sensors</li>\
             <li>/airports?q={string}: returns a list of potential airports matching the query string</li>\
+            <li><a href=\"/metrics\">/metrics</a>: returns runtime metrics for the decode pipeline</li>\
             </ul>",
         ))
     });
@@ -182,13 +193,27 @@ pub async fn serve_web_api(shared: Arc<SharedState>, port: u16) {
         .and(warp::query::<Query>())
         .and_then(|query: Query| async move { airports(query).await });
 
+    let shared_metrics = shared.clone();
+    let metrics = warp::path("metrics")
+        .and(warp::any().map(move || shared_metrics.clone()))
+        .and_then(
+            |shared: Arc<SharedState>| async move { metrics(&shared).await },
+        );
+
     let cors = warp::cors()
         .allow_any_origin()
         .allow_headers(vec!["*"])
         .allow_methods(vec!["GET"]);
 
     let routes = warp::get()
-        .and(home.or(icao24).or(all).or(track).or(sensors).or(airports))
+        .and(
+            home.or(icao24)
+                .or(all)
+                .or(track)
+                .or(sensors)
+                .or(airports)
+                .or(metrics),
+        )
         .recover(handle_rejection)
         .with(cors);
 

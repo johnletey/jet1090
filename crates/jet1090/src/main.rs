@@ -2,6 +2,7 @@
 
 mod dedup;
 mod filters;
+mod metrics;
 mod sensor;
 mod shell;
 mod snapshot;
@@ -36,7 +37,7 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::{sleep, Duration};
-use tracing::warn;
+use tracing::{info, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(Default, Deserialize, Parser)]
@@ -536,6 +537,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
+    // Periodic metrics log (every 60s)
+    let shared_metrics_log = shared.clone();
+    tokio::spawn(async move {
+        loop {
+            sleep(Duration::from_secs(60)).await;
+            let aircraft_count =
+                shared_metrics_log.state_vectors.read().await.len();
+            let m = shared_metrics_log.metrics.snapshot(aircraft_count);
+            info!(
+                uptime_s = m.uptime_seconds,
+                aircraft = m.active_aircraft,
+                received = m.messages_received,
+                after_dedup = m.messages_after_dedup,
+                decoded = m.decode_successes,
+                decode_errors = m.decode_errors,
+                pos_attempts = m.position_attempts,
+                pos_resolved = m.position_successes,
+                "metrics"
+            );
+        }
+    });
+
     // I am not sure whether this size calibration is relevant, but let's try...
     // adding one in order to avoid the stupid error when you set a size = 0
     let multiplier = references.len();
@@ -559,6 +582,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Conditionally spawn deduplication task
+    let metrics_dedup = shared.metrics.clone();
     if !options.no_deduplication {
         tokio::spawn(async move {
             dedup::deduplicate_messages(
@@ -566,6 +590,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tx_dedup,
                 options.deduplication.unwrap_or(450),
                 options.reorder_window.unwrap_or(200),
+                metrics_dedup,
             )
             .await;
         });
@@ -573,23 +598,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Pass through without deduplication, but still decode messages
         tokio::spawn(async move {
             while let Some(mut msg) = rx.recv().await {
+                metrics_dedup.record_received();
+                metrics_dedup.record_after_dedup();
+
                 let start = SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .expect("SystemTime before unix epoch")
                     .as_secs_f64();
 
-                if let Ok((_, decoded)) = Message::from_bytes((&msg.frame, 0)) {
-                    msg.decode_time = Some(
-                        SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .expect("SystemTime before unix epoch")
-                            .as_secs_f64()
-                            - start,
-                    );
-                    msg.message = Some(decoded);
+                match Message::from_bytes((&msg.frame, 0)) {
+                    Ok((_, decoded)) => {
+                        msg.decode_time = Some(
+                            SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .expect("SystemTime before unix epoch")
+                                .as_secs_f64()
+                                - start,
+                        );
+                        msg.message = Some(decoded);
+                        metrics_dedup.record_decode_success();
 
-                    if tx_dedup.send(msg).await.is_err() {
-                        break;
+                        if tx_dedup.send(msg).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => {
+                        metrics_dedup.record_decode_error();
                     }
                 }
             }
@@ -630,10 +664,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             last_reference_update = msg.timestamp;
         }
 
+        // Record DF distribution
+        if let Some(message) = &msg.message {
+            shared_dec
+                .metrics
+                .record_df(metrics::df_number(&message.df));
+        }
+
         if let Some(message) = &mut msg.message {
             match &mut message.df {
                 ExtendedSquitterADSB(adsb) => match adsb.message {
                     ME::BDS05 { .. } | ME::BDS06 { .. } => {
+                        shared_dec.metrics.record_position_attempt();
+
                         let serial = msg
                             .metadata
                             .first()
@@ -650,6 +693,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             &update_reference,
                         );
 
+                        let position_resolved = match &adsb.message {
+                            ME::BDS05 { inner, .. } => inner.latitude.is_some(),
+                            ME::BDS06 { inner, .. } => inner.latitude.is_some(),
+                            _ => false,
+                        };
+                        if position_resolved {
+                            shared_dec.metrics.record_position_success();
+                        }
+
                         // References may have been modified.
                         // With static receivers, we don't care.
                         // With dynamic ones, we may want to update the reference position.
@@ -664,6 +716,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 ExtendedSquitterTisB { cf, .. } => match cf.me {
                     ME::BDS05 { .. } | ME::BDS06 { .. } => {
+                        shared_dec.metrics.record_position_attempt();
+
                         let serial = msg
                             .metadata
                             .first()
@@ -679,7 +733,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             &mut aircraft,
                             &mut reference,
                             &update_reference,
-                        )
+                        );
+
+                        let position_resolved = match &cf.me {
+                            ME::BDS05 { inner, .. } => inner.latitude.is_some(),
+                            ME::BDS06 { inner, .. } => inner.latitude.is_some(),
+                            _ => false,
+                        };
+                        if position_resolved {
+                            shared_dec.metrics.record_position_success();
+                        }
                     }
                     _ => {}
                 },
@@ -811,6 +874,8 @@ pub struct SharedState {
     should_quit: Arc<AtomicBool>,
     /// Clear screen flag - lock-free atomic
     should_clear: Arc<AtomicBool>,
+    /// Runtime metrics
+    metrics: Arc<metrics::Metrics>,
 }
 
 impl SharedState {
@@ -820,6 +885,7 @@ impl SharedState {
             sensors,
             should_quit: Arc::new(AtomicBool::new(false)),
             should_clear: Arc::new(AtomicBool::new(false)),
+            metrics: Arc::new(metrics::Metrics::new()),
         }
     }
 }
