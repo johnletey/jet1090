@@ -157,7 +157,8 @@ pub struct CapabilityClassAirborne {
     #[serde(rename = "CDTI")]
     pub cdti: bool,
 
-    #[deku(bits = "2", assert_eq = "0")]
+    // #[deku(bits = "2", assert_eq = "0")] // see issue 471
+    #[deku(bits = "2")]
     #[serde(skip, default = "u8::default")]
     pub reserved1: u8,
 
