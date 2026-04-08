@@ -1,7 +1,10 @@
 #![doc = include_str!("../readme.md")]
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
+use deku::DekuContainerRead;
 use flate2::read::GzDecoder;
+use glob::glob;
+use rs1090::decode::cat48::Cat48Record;
 use rs1090::decode::commb::MessageProcessor;
 use rs1090::decode::cpr::{decode_position, AircraftState, Position, UpdateIf};
 use rs1090::decode::SensorMetadata;
@@ -23,6 +26,9 @@ use tokio::io::AsyncWriteExt;
     about = "Decode Mode S demodulated raw messages to JSON format"
 )]
 struct Options {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
     /// Input file instead of individual messages (jsonl format)
     #[arg(long, short, default_value= None)]
     input: Option<String>,
@@ -43,6 +49,28 @@ struct Options {
 
     /// Individual messages to decode
     msgs: Vec<String>,
+}
+
+#[derive(Debug, Subcommand)]
+enum Commands {
+    /// Decode ASTERIX CAT48 files (.raw, .da1) to JSON
+    Asterix {
+        /// Input files or glob patterns (e.g., "*.da1", "data/*.raw")
+        #[arg(required = true)]
+        inputs: Vec<String>,
+
+        /// Output file instead of stdout (JSONL format)
+        #[arg(long, short)]
+        output: Option<String>,
+
+        /// Output one JSON array instead of JSONL (one record per line)
+        #[arg(long)]
+        array: bool,
+
+        /// Pretty print JSON output
+        #[arg(long)]
+        pretty: bool,
+    },
 }
 
 /// Read and decompress input file based on extension
@@ -140,6 +168,18 @@ fn parse_beast_csv_line(line: &str) -> Option<JSONEntry> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options = Options::parse();
 
+    // Handle subcommands
+    if let Some(Commands::Asterix {
+        inputs,
+        output,
+        array,
+        pretty,
+    }) = options.command
+    {
+        return process_asterix(inputs, output, array, pretty).await;
+    }
+
+    // Default behavior: Mode S decoding
     let input_file = options.input;
 
     let mut output_file = if let Some(output_path) = options.output {
@@ -377,4 +417,157 @@ async fn process_entries(
         }
     }
     Ok(())
+}
+
+/// Process ASTERIX CAT48 files and output JSON
+async fn process_asterix(
+    inputs: Vec<String>,
+    output: Option<String>,
+    array: bool,
+    pretty: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Expand glob patterns and collect all file paths
+    let mut files: Vec<std::path::PathBuf> = Vec::new();
+    for pattern in &inputs {
+        let matches: Vec<_> = glob(pattern)?.filter_map(Result::ok).collect();
+        if matches.is_empty() {
+            // If no glob match, treat as literal path
+            let path = std::path::PathBuf::from(pattern);
+            if path.exists() {
+                files.push(path);
+            } else {
+                eprintln!("Warning: File not found: {}", pattern);
+            }
+        } else {
+            files.extend(matches);
+        }
+    }
+
+    if files.is_empty() {
+        return Err("No input files found".into());
+    }
+
+    // Open output file if specified
+    let mut output_file: Option<File> = if let Some(output_path) = output {
+        Some(
+            fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(output_path)
+                .await?,
+        )
+    } else {
+        None
+    };
+
+    let mut all_records: Vec<Cat48Record> = Vec::new();
+    let mut total_records = 0usize;
+    let mut total_errors = 0usize;
+
+    for file_path in &files {
+        eprintln!("Processing: {}", file_path.display());
+        let data = std::fs::read(file_path)?;
+        let (records, errors) = parse_asterix_data(&data);
+        total_records += records.len();
+        total_errors += errors;
+
+        if array {
+            all_records.extend(records);
+        } else {
+            // Output each record as JSONL
+            for record in records {
+                let json = if pretty {
+                    serde_json::to_string_pretty(&record)?
+                } else {
+                    serde_json::to_string(&record)?
+                };
+                if let Some(file) = &mut output_file {
+                    file.write_all(json.as_bytes()).await?;
+                    file.write_all(b"\n").await?;
+                } else {
+                    println!("{json}");
+                }
+            }
+        }
+    }
+
+    // If array mode, output all records as a single JSON array
+    if array {
+        let json = if pretty {
+            serde_json::to_string_pretty(&all_records)?
+        } else {
+            serde_json::to_string(&all_records)?
+        };
+        if let Some(file) = &mut output_file {
+            file.write_all(json.as_bytes()).await?;
+            file.write_all(b"\n").await?;
+        } else {
+            println!("{json}");
+        }
+    }
+
+    eprintln!(
+        "Done: {} records parsed from {} files ({} parse errors)",
+        total_records,
+        files.len(),
+        total_errors
+    );
+
+    Ok(())
+}
+
+/// Parse ASTERIX data from raw bytes, returning parsed records and error count
+fn parse_asterix_data(data: &[u8]) -> (Vec<Cat48Record>, usize) {
+    let mut records = Vec::new();
+    let mut errors = 0usize;
+    let mut offset = 0;
+
+    while offset < data.len() {
+        // Need at least 3 bytes for CAT + LEN
+        if offset + 3 > data.len() {
+            break;
+        }
+
+        let cat = data[offset];
+        let len =
+            u16::from_be_bytes([data[offset + 1], data[offset + 2]]) as usize;
+
+        // Validate length
+        if len < 3 || offset + len > data.len() {
+            eprintln!(
+                "Invalid record length {} at offset {}, skipping",
+                len, offset
+            );
+            errors += 1;
+            offset += 1; // Try to recover by advancing 1 byte
+            continue;
+        }
+
+        // Only process CAT48 records
+        if cat != 48 {
+            // Skip non-CAT48 records silently
+            offset += len;
+            continue;
+        }
+
+        // Parse the record
+        let record_data = &data[offset..offset + len];
+        match Cat48Record::from_bytes((record_data, 0)) {
+            Ok((_, record)) => {
+                records.push(record);
+            }
+            Err(e) => {
+                eprintln!(
+                    "Failed to parse CAT48 record at offset {}: {:?}",
+                    offset, e
+                );
+                errors += 1;
+            }
+        }
+
+        offset += len;
+    }
+
+    (records, errors)
 }

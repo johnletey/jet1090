@@ -1,5 +1,6 @@
 pub mod adsb;
 pub mod bds;
+pub mod cat48;
 pub mod commb;
 pub mod cpr;
 pub mod crc;
@@ -635,7 +636,9 @@ impl core::str::FromStr for IcaoParity {
 
 /// ICAO 24-bit address, commonly use to reference airframes, i.e. tail numbers
 /// of aircraft
-#[derive(PartialEq, Eq, PartialOrd, DekuRead, Hash, Copy, Clone, Ord)]
+#[derive(
+    PartialEq, Eq, PartialOrd, DekuRead, DekuWrite, Hash, Copy, Clone, Ord,
+)]
 pub struct ICAO(#[deku(bits = 24, endian = "big")] pub u32);
 
 impl fmt::Debug for ICAO {
