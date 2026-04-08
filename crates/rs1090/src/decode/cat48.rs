@@ -1,6 +1,6 @@
 //! CAT48 ASTERIX parser for Mode S surveillance data (Monoradar Target Reports)
 //!
-//! Based on EUROCONTROL ASTERIX CAT048 v1.21 specification.
+//! Based on EUROCONTROL ASTERIX CAT048 v1.32 specification.
 //!
 //! # Supported Data Items
 //!
@@ -296,10 +296,12 @@ pub struct DataSourceIdentifier {
     pub sic: u8,
 }
 
-/// I048/020: Target Report Descriptor
+/// I048/020: Target Report Descriptor (CAT48 v1.32+)
 /// Type and characteristics of the target report.
-/// Variable length with FX extension bits.
-/// Layout octet 1: TYP(3) + SIM(1) + RDP(1) + SPI(1) + RAB(1) + FX(1)
+/// Variable length with FX extension bits (supports up to 3 octets).
+/// Octet 1: TYP(3) + SIM(1) + RDP(1) + SPI(1) + RAB(1) + FX(1)
+/// Octet 2 (if FX=1): TST(1) + spare(1) + XPP(1) + ME(1) + MI(1) + FOE_FRI(2) + FX(1)
+/// Octet 3 (if Extension 1 FX=1): ADSB(2) + SCN(2) + PAI(2) + FX(1) + spare(1)
 #[derive(Debug, Clone, PartialEq, DekuRead, Serialize)]
 pub struct TargetReportDescriptor {
     /// TYP: Detection type (3 bits)
@@ -352,14 +354,48 @@ pub struct TrdExtension1 {
     #[deku(bits = "1")]
     #[serde(skip)]
     fx: bool,
-    /// Consume any further FX extension octets (not parsed)
-    #[deku(cond = "*fx", reader = "TrdExtension1::skip_fx_tail(deku::reader)")]
+    /// Second extension fields (present if FX bit of first extension is set)
+    #[deku(cond = "*fx")]
+    pub extension2: Option<TrdExtension2>,
+}
+
+/// Extension indicator from Target Report Descriptor extensions
+/// Used in I048/020 Extension 2 (ADSB, SCN, PAI fields)
+/// Layout: EP(1) + VAL(1)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, DekuRead, Serialize)]
+pub struct ExtensionIndicator {
+    /// EP: Element Populated (0=not populated, 1=populated)
+    #[deku(bits = "1")]
+    pub populated: bool,
+    /// VAL: Value (0=not available, 1=available)
+    #[deku(bits = "1")]
+    pub available: bool,
+}
+
+/// Second extension octet of Target Report Descriptor (v1.32+)
+/// Layout: ADSB(2) + SCN(2) + PAI(2) + FX(1) + spare(1)
+#[derive(Debug, Clone, PartialEq, DekuRead, Serialize)]
+pub struct TrdExtension2 {
+    /// ADSB: On-Site ADS-B Information availability
+    pub adsb: ExtensionIndicator,
+    /// SCN: Surveillance Cluster Network Information availability
+    pub scn: ExtensionIndicator,
+    /// PAI: Passive Acquisition Interface availability
+    pub pai: ExtensionIndicator,
+    /// FX: Extension indicator (bit 0) - for future extensions
+    #[deku(bits = "1")]
+    fx: bool,
+    /// Spare bit
+    #[deku(bits = "1", pad_bits_after = "0")]
+    _spare: u8,
+    /// Skip any further FX extension octets beyond Extension 2 (for future compatibility)
+    #[deku(cond = "*fx", reader = "TrdExtension2::skip_fx_tail(deku::reader)")]
     #[serde(skip)]
     _fx_tail: Option<()>,
 }
 
-impl TrdExtension1 {
-    /// Skip any additional FX extension octets beyond the first extension
+impl TrdExtension2 {
+    /// Skip any additional FX extension octets beyond Extension 2
     fn skip_fx_tail<R: std::io::Read + std::io::Seek>(
         reader: &mut deku::reader::Reader<R>,
     ) -> Result<Option<()>, DekuError> {
@@ -1488,5 +1524,58 @@ mod tests {
 
         // Verify callsign is flattened into the top-level object
         assert!(json_value["callsign"].as_str().is_some());
+    }
+
+    /// Test parsing CAT48 record with Target Report Descriptor Extension 2 (v1.32)
+    /// Extension 2 contains ADSB, SCN, and PAI availability bits
+    #[test]
+    fn test_trd_extension2_parsing() {
+        // Construct a minimal CAT48 record with I048/020 containing Extension 2
+        // CAT: 48, LEN: 9 bytes
+        // FSPEC: 0xA0 (bits for FRN1=I048/010 and FRN3=I048/020)
+        // I048/010: SAC=0x00, SIC=0x01
+        // I048/020:
+        //   Octet 1: TYP=001(PSR) + SIM=0 + RDP=0 + SPI=0 + RAB=0 + FX=1
+        //   Ext 1: TST=0 + spare=0 + XPP=0 + ME=0 + MI=0 + FOE_FRI=00 + FX=1
+        //   Ext 2: ADSB(01: not populated, available) + SCN(10: populated, not available)
+        //          + PAI(11: populated, available) + FX=0 + spare=0
+        let data = hex::decode("300009a0000121016c").unwrap();
+
+        let (_, record) = Cat48Record::from_bytes((&data, 0))
+            .expect("Failed to parse CAT48 with Extension 2");
+
+        // Verify SAC/SIC
+        assert_eq!(record.sac(), Some(0x00));
+        assert_eq!(record.sic(), Some(0x01));
+
+        // Verify TRD basic fields
+        assert_eq!(
+            record.target_report_descriptor.as_ref().unwrap().typ,
+            DetectionType::SinglePsr
+        );
+
+        // Verify Extension 1 exists
+        let ext1 = record
+            .target_report_descriptor
+            .as_ref()
+            .unwrap()
+            .extension1
+            .as_ref();
+        assert!(ext1.is_some(), "Extension 1 should be present");
+
+        // Verify Extension 2 exists and contains correct values
+        let ext2 = ext1.unwrap().extension2.as_ref();
+        assert!(ext2.is_some(), "Extension 2 should be present");
+
+        let ext2_data = ext2.unwrap();
+        // ADSB: EP=0, VAL=1
+        assert!(!ext2_data.adsb.populated);
+        assert!(ext2_data.adsb.available);
+        // SCN: EP=1, VAL=0
+        assert!(ext2_data.scn.populated);
+        assert!(!ext2_data.scn.available);
+        // PAI: EP=1, VAL=1
+        assert!(ext2_data.pai.populated);
+        assert!(ext2_data.pai.available);
     }
 }
