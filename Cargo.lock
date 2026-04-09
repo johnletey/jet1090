@@ -1260,6 +1260,7 @@ dependencies = [
  "futures-util",
  "glob",
  "hex",
+ "rayon",
  "rs1090",
  "serde",
  "serde_json",

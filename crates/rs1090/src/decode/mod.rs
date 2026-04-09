@@ -538,6 +538,7 @@ pub struct TimedMessage {
     #[serde(flatten)]
     pub message: Option<Message>,
     /// Information about when and where the message was received
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub metadata: Vec<SensorMetadata>,
     /// Debugging information about decoding time (not serialized)
     #[serde(skip_serializing_if = "skip_serialize_decode_time")]

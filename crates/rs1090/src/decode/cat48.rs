@@ -36,27 +36,7 @@
 //! | 28 | RE | Reserved Expansion Field | Explicit |
 
 use super::bds::{
-    bds05::AirbornePosition,
-    bds06::SurfacePosition,
-    bds08::{
-        callsign_read, AircraftIdentification as Bds08AircraftIdentification,
-    },
-    bds09::AirborneVelocity,
-    bds10::DataLinkCapability,
-    bds17::CommonUsageGICBCapabilityReport,
-    bds18::GICBCapabilityReportPart1,
-    bds19::GICBCapabilityReportPart2,
-    bds20::AircraftIdentification as Bds20AircraftIdentification,
-    bds21::AircraftAndAirlineRegistrationMarkings,
-    bds30::ACASResolutionAdvisory,
-    bds40::SelectedVerticalIntention,
-    bds44::MeteorologicalRoutineAirReport,
-    bds45::MeteorologicalHazardReport,
-    bds50::TrackAndTurnReport,
-    bds60::HeadingAndSpeedReport,
-    bds61::AircraftStatus,
-    bds62::TargetStateAndStatusInformation,
-    bds65::AircraftOperationStatus,
+    bds08::callsign_read, decode_payload, DecodedBds, DecodingError,
 };
 use super::ICAO;
 use deku::prelude::*;
@@ -164,7 +144,7 @@ pub struct Cat48Record {
     /// I048/250: Mode S MB Data (FRN 10)
     /// Mode S Comm B data extracted from the aircraft transponder.
     #[deku(cond = "Self::has_frn(&fspec, 10)")]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "mode_s", skip_serializing_if = "Option::is_none")]
     pub mode_s_mb_data: Option<ModeSMbData>,
 
     /// I048/161: Track Number (FRN 11)
@@ -495,6 +475,26 @@ pub struct ModeSMbData {
     pub records: Vec<BdsRecord>,
 }
 
+/// Custom serialization for Result<DecodedBds, DecodingError>
+/// Serializes Ok(value) directly, and Err(error) as {"error": error_message}
+fn serialize_decode_result<S>(
+    result: &Result<DecodedBds, DecodingError>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match result {
+        Ok(decoded) => decoded.serialize(serializer),
+        Err(err) => {
+            use serde::ser::SerializeMap;
+            let mut map = serializer.serialize_map(Some(1))?;
+            map.serialize_entry("error", &err.to_string())?;
+            map.end()
+        }
+    }
+}
+
 /// BDS Register Data record (part of I048/250)
 /// Each record is 8 bytes: 7 bytes payload + 1 byte BDS code.
 /// The decoded BDS content is eagerly parsed during DekuRead.
@@ -507,54 +507,15 @@ pub struct BdsRecord {
     /// BDS Register Address (BDS1 in upper nibble, BDS2 in lower nibble)
     #[serde(rename = "bds", serialize_with = "serialize_u8_as_hex")]
     pub bds_code: u8,
-    /// Decoded BDS payload (if decodable)
-    #[deku(skip, default = "Self::decode_payload(&payload, *bds_code)")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub decoded: Option<DecodedBds>,
-}
+    /// Decoded BDS payload (includes errors from decoding)
+    #[deku(skip, default = "decode_payload(&payload, *bds_code)")]
+    #[serde(serialize_with = "serialize_decode_result")]
+    pub decoded: Result<DecodedBds, DecodingError>,
 
-/// Decoded BDS payload content
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(untagged)]
-pub enum DecodedBds {
-    /// BDS 0,5: Airborne Position
-    Bds05(AirbornePosition),
-    /// BDS 0,6: Surface Position
-    Bds06(SurfacePosition),
-    /// BDS 0,8: Aircraft Identification and Category
-    Bds08(Bds08AircraftIdentification),
-    /// BDS 0,9: Airborne Velocity
-    Bds09(AirborneVelocity),
-    /// BDS 1,0: Data Link Capability
-    Bds10(DataLinkCapability),
-    /// BDS 1,7: Common Usage GICB Capability Report
-    Bds17(CommonUsageGICBCapabilityReport),
-    /// BDS 1,8: GICB Capability Report Part 1
-    Bds18(GICBCapabilityReportPart1),
-    /// BDS 1,9: GICB Capability Report Part 2
-    Bds19(GICBCapabilityReportPart2),
-    /// BDS 2,0: Aircraft Identification
-    Bds20(Bds20AircraftIdentification),
-    /// BDS 2,1: Aircraft and Airline Registration Markings
-    Bds21(AircraftAndAirlineRegistrationMarkings),
-    /// BDS 3,0: ACAS Resolution Advisory
-    Bds30(ACASResolutionAdvisory),
-    /// BDS 4,0: Selected Vertical Intention
-    Bds40(SelectedVerticalIntention),
-    /// BDS 4,4: Meteorological Routine Air Report
-    Bds44(MeteorologicalRoutineAirReport),
-    /// BDS 4,5: Meteorological Hazard Report
-    Bds45(MeteorologicalHazardReport),
-    /// BDS 5,0: Track and Turn Report
-    Bds50(TrackAndTurnReport),
-    /// BDS 6,0: Heading and Speed Report
-    Bds60(HeadingAndSpeedReport),
-    /// BDS 6,1: Aircraft Status (Emergency/Priority)
-    Bds61(AircraftStatus),
-    /// BDS 6,2: Target State and Status Information
-    Bds62(TargetStateAndStatusInformation),
-    /// BDS 6,5: Aircraft Operational Status
-    Bds65(AircraftOperationStatus),
+    /// Inferred BDS codes from payload (using infer_bds)
+    #[deku(skip, default = "super::bds::infer_bds(&payload)")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub inferred: Vec<DecodedBds>,
 }
 
 impl BdsRecord {
@@ -566,152 +527,6 @@ impl BdsRecord {
     /// Get BDS code as formatted string (e.g., "40", "50", "60")
     pub fn bds_string(&self) -> String {
         format!("{:02x}", self.bds_code)
-    }
-
-    /// Get BDS1 (upper nibble)
-    pub fn bds1(&self) -> u8 {
-        (self.bds_code >> 4) & 0x0F
-    }
-
-    /// Get BDS2 (lower nibble)
-    pub fn bds2(&self) -> u8 {
-        self.bds_code & 0x0F
-    }
-
-    /// Extract the Type Code (TC) from the first 5 bits of payload
-    fn extract_tc(payload: &[u8]) -> u8 {
-        if payload.is_empty() {
-            return 0;
-        }
-        payload[0] >> 3
-    }
-
-    /// Attempt to decode the BDS payload based on the BDS code
-    /// Returns None if decoding fails or BDS type is not supported
-    fn decode_payload(payload: &[u8], bds_code: u8) -> Option<DecodedBds> {
-        match bds_code {
-            0x05 => {
-                let tc = Self::extract_tc(payload);
-                if !((9..=18).contains(&tc) || (20..=22).contains(&tc)) {
-                    return None;
-                }
-                AirbornePosition::from_reader_with_ctx(
-                    &mut deku::reader::Reader::new(std::io::Cursor::new(
-                        payload,
-                    )),
-                    tc,
-                )
-                .ok()
-                .map(DecodedBds::Bds05)
-            }
-            0x06 => {
-                let tc = Self::extract_tc(payload);
-                if !(5..=8).contains(&tc) {
-                    return None;
-                }
-                SurfacePosition::from_reader_with_ctx(
-                    &mut deku::reader::Reader::new(std::io::Cursor::new(
-                        payload,
-                    )),
-                    tc,
-                )
-                .ok()
-                .map(DecodedBds::Bds06)
-            }
-            0x08 => {
-                let tc = Self::extract_tc(payload);
-                if !(1..=4).contains(&tc) {
-                    return None;
-                }
-                Bds08AircraftIdentification::from_reader_with_ctx(
-                    &mut deku::reader::Reader::new(std::io::Cursor::new(
-                        payload,
-                    )),
-                    tc,
-                )
-                .ok()
-                .map(DecodedBds::Bds08)
-            }
-            0x09 => {
-                let tc = Self::extract_tc(payload);
-                if tc != 19 {
-                    return None;
-                }
-                AirborneVelocity::from_bytes((payload, 5))
-                    .ok()
-                    .map(|(_, decoded)| DecodedBds::Bds09(decoded))
-            }
-            0x10 => {
-                let mut data = vec![0x10];
-                data.extend_from_slice(payload);
-                DataLinkCapability::from_bytes((&data, 0))
-                    .ok()
-                    .map(|(_, decoded)| DecodedBds::Bds10(decoded))
-            }
-            0x17 => CommonUsageGICBCapabilityReport::from_bytes((payload, 0))
-                .ok()
-                .map(|(_, decoded)| DecodedBds::Bds17(decoded)),
-            0x18 => GICBCapabilityReportPart1::from_bytes((payload, 0))
-                .ok()
-                .map(|(_, decoded)| DecodedBds::Bds18(decoded)),
-            0x19 => GICBCapabilityReportPart2::from_bytes((payload, 0))
-                .ok()
-                .map(|(_, decoded)| DecodedBds::Bds19(decoded)),
-            0x20 => Bds20AircraftIdentification::from_bytes((payload, 0))
-                .ok()
-                .map(|(_, decoded)| DecodedBds::Bds20(decoded)),
-            0x21 => {
-                AircraftAndAirlineRegistrationMarkings::from_bytes((payload, 0))
-                    .ok()
-                    .map(|(_, decoded)| DecodedBds::Bds21(decoded))
-            }
-            0x30 => ACASResolutionAdvisory::from_bytes((payload, 0))
-                .ok()
-                .map(|(_, decoded)| DecodedBds::Bds30(decoded)),
-            0x40 => SelectedVerticalIntention::from_bytes((payload, 0))
-                .ok()
-                .map(|(_, decoded)| DecodedBds::Bds40(decoded)),
-            0x44 => MeteorologicalRoutineAirReport::from_bytes((payload, 0))
-                .ok()
-                .map(|(_, decoded)| DecodedBds::Bds44(decoded)),
-            0x45 => MeteorologicalHazardReport::from_bytes((payload, 0))
-                .ok()
-                .map(|(_, decoded)| DecodedBds::Bds45(decoded)),
-            0x50 => TrackAndTurnReport::from_bytes((payload, 0))
-                .ok()
-                .map(|(_, decoded)| DecodedBds::Bds50(decoded)),
-            0x60 => HeadingAndSpeedReport::from_bytes((payload, 0))
-                .ok()
-                .map(|(_, decoded)| DecodedBds::Bds60(decoded)),
-            0x61 => {
-                let tc = Self::extract_tc(payload);
-                if tc != 28 {
-                    return None;
-                }
-                AircraftStatus::from_bytes((payload, 5))
-                    .ok()
-                    .map(|(_, decoded)| DecodedBds::Bds61(decoded))
-            }
-            0x62 => {
-                let tc = Self::extract_tc(payload);
-                if tc != 29 {
-                    return None;
-                }
-                TargetStateAndStatusInformation::from_bytes((payload, 5))
-                    .ok()
-                    .map(|(_, decoded)| DecodedBds::Bds62(decoded))
-            }
-            0x65 => {
-                let tc = Self::extract_tc(payload);
-                if tc != 31 {
-                    return None;
-                }
-                AircraftOperationStatus::from_bytes((payload, 5))
-                    .ok()
-                    .map(|(_, decoded)| DecodedBds::Bds65(decoded))
-            }
-            _ => None,
-        }
     }
 }
 
