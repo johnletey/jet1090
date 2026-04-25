@@ -74,6 +74,17 @@ pub async fn sensors(value: &Source) -> Vec<Sensor> {
                 last_timestamp: 0,
             }]
         }
+        #[cfg(feature = "hackrf")]
+        Address::Hackrf(_) => {
+            vec![Sensor {
+                serial: value.serial(),
+                name: value.name.clone(),
+                reference: value.reference(),
+                altitude: value.altitude,
+                aircraft_count: 0,
+                last_timestamp: 0,
+            }]
+        }
         #[cfg(feature = "soapy")]
         Address::Soapy(_) => {
             vec![Sensor {

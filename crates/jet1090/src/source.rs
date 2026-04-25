@@ -12,17 +12,28 @@ use rs1090::source::sero;
 use rs1090::source::ssh::{TunnelledTcp, TunnelledWebsocket};
 
 #[cfg(feature = "airspy")]
-use desperado::airspy::{AirspyConfig, DeviceSelector as AirspyDeviceSelector};
+use desperado::airspy::{
+    AirspyConfig, AirspyGainMode, DeviceSelector as AirspyDeviceSelector,
+};
+#[cfg(feature = "hackrf")]
+use desperado::hackrf::HackRfConfig;
 #[cfg(feature = "rtlsdr")]
 use desperado::rtlsdr::{DeviceSelector, RtlSdrConfig};
 #[cfg(feature = "soapy")]
 use desperado::soapy::SoapyConfig;
-#[cfg(any(feature = "rtlsdr", feature = "soapy"))]
+#[cfg(any(
+    feature = "rtlsdr",
+    feature = "soapy",
+    feature = "hackrf",
+    feature = "airspy"
+))]
 use desperado::DeviceConfig;
 #[cfg(feature = "sdr")]
 use desperado::Gain;
 #[cfg(feature = "sdr")]
 use desperado::IqAsyncSource;
+#[cfg(feature = "sdr")]
+use desperado::{GainElement, GainElementName};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Sender;
 use tracing::error;
@@ -32,6 +43,8 @@ use url::Url;
 const MODES_FREQ: f64 = 1.09e9;
 #[cfg(feature = "sdr")]
 const RATE_2_4M: f64 = 2.4e6;
+#[cfg(feature = "sdr")]
+const RATE_6M: f64 = 6.0e6;
 
 #[cfg(feature = "rtlsdr")]
 const RTLSDR_GAIN: f64 = 49.6;
@@ -141,6 +154,47 @@ pub struct AirspyDeviceConfig {
     /// Serial number filter (decimal or hex, e.g. "1234" or "0x4d2")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub serial: Option<String>,
+    /// LNA gain (0-14), None for default/auto
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lna_gain: Option<u8>,
+    /// Mixer gain (0-15), None for default/auto
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mixer_gain: Option<u8>,
+    /// VGA gain (0-15), None for default/auto
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vga_gain: Option<u8>,
+}
+
+/// Structured HackRF device configuration for TOML
+#[cfg(feature = "hackrf")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct HackrfPath {
+    #[serde(flatten)]
+    pub config: HackrfDeviceConfig,
+}
+
+/// HackRF device configuration fields
+#[cfg(feature = "hackrf")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HackrfDeviceConfig {
+    /// Device index (0, 1, 2, ...)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device: Option<usize>,
+    /// LNA gain (0-40 dB, 8 dB steps), None for default (16 dB)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lna_gain: Option<u32>,
+    /// VGA gain (0-62 dB, 2 dB steps), None for default (20 dB)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vga_gain: Option<u32>,
+    /// Enable RF amplifier (+14 dB before LNA), None for default (false)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub amp_enable: Option<bool>,
+    /// Frequency offset in Hz to avoid DC offset issues (e.g., 100000 for +100kHz)
+    /// Tune to 1090 MHz ± offset. Helps reduce DC offset degradation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub freq_offset_hz: Option<i32>,
 }
 
 /// Helper struct for deserializing SoapySDR configuration from TOML
@@ -178,6 +232,9 @@ pub enum Address {
     /// An Airspy device, e.g. `airspy://` or `airspy://serial=0x35AC63DC2D8C7A4F`
     #[cfg(feature = "airspy")]
     Airspy(AirspyPath),
+    /// A HackRF device, e.g. `hackrf://` or `hackrf://0`
+    #[cfg(feature = "hackrf")]
+    Hackrf(HackrfPath),
     /// A SoapySDR device, e.g. `soapy://driver=rtlsdr`
     #[cfg(feature = "soapy")]
     Soapy(SoapyPath),
@@ -212,8 +269,13 @@ pub struct Source {
     /// Sample rate in Hz (2.4e6 or 6.0e6, default: 2.4e6)
     #[cfg(feature = "sdr")]
     pub sample_rate: Option<f64>,
-    /// Enable bias-tee to power external LNA (RTL-SDR and SoapySDR, default: false)
-    #[cfg(any(feature = "rtlsdr", feature = "soapy", feature = "airspy"))]
+    /// Enable bias-tee to power external LNA (RTL-SDR, SoapySDR, Airspy, and HackRF, default: false)
+    #[cfg(any(
+        feature = "rtlsdr",
+        feature = "soapy",
+        feature = "airspy",
+        feature = "hackrf"
+    ))]
     pub bias_tee: Option<bool>,
     /// IQ file format (cu8, cs8, cs16, default: cu8 for RTL-SDR compatibility)
     #[cfg(feature = "sdr")]
@@ -245,7 +307,8 @@ impl<'de> Deserialize<'de> for Source {
             #[cfg(any(
                 feature = "rtlsdr",
                 feature = "soapy",
-                feature = "airspy"
+                feature = "airspy",
+                feature = "hackrf"
             ))]
             bias_tee: Option<bool>,
             #[cfg(feature = "sdr")]
@@ -286,7 +349,8 @@ impl<'de> Deserialize<'de> for Source {
             #[cfg(any(
                 feature = "rtlsdr",
                 feature = "soapy",
-                feature = "airspy"
+                feature = "airspy",
+                feature = "hackrf"
             ))]
             bias_tee: helper.bias_tee,
             #[cfg(feature = "sdr")]
@@ -420,17 +484,26 @@ impl FromStr for Source {
                     AirspyDeviceConfig {
                         device: Some(0),
                         serial: None,
+                        lna_gain: None,
+                        mixer_gain: None,
+                        vga_gain: None,
                     }
                 } else if let Ok(idx) = device_str.parse::<usize>() {
                     AirspyDeviceConfig {
                         device: Some(idx),
                         serial: None,
+                        lna_gain: None,
+                        mixer_gain: None,
+                        vga_gain: None,
                     }
                 } else if let Some(serial) = device_str.strip_prefix("serial=")
                 {
                     AirspyDeviceConfig {
                         device: None,
                         serial: Some(serial.to_string()),
+                        lna_gain: None,
+                        mixer_gain: None,
+                        vga_gain: None,
                     }
                 } else {
                     eprintln!(
@@ -442,10 +515,52 @@ impl FromStr for Source {
                     AirspyDeviceConfig {
                         device: Some(0),
                         serial: None,
+                        lna_gain: None,
+                        mixer_gain: None,
+                        vga_gain: None,
                     }
                 };
 
                 Address::Airspy(AirspyPath { config })
+            }
+            #[cfg(feature = "hackrf")]
+            "hackrf" => {
+                // Parse CLI argument and convert to structured config
+                let device_str = url.host_str().unwrap_or("");
+
+                let config = if device_str.is_empty() {
+                    HackrfDeviceConfig {
+                        device: Some(0),
+                        lna_gain: None,
+                        vga_gain: None,
+                        amp_enable: None,
+                        freq_offset_hz: None,
+                    }
+                } else if let Ok(idx) = device_str.parse::<usize>() {
+                    HackrfDeviceConfig {
+                        device: Some(idx),
+                        lna_gain: None,
+                        vga_gain: None,
+                        amp_enable: None,
+                        freq_offset_hz: None,
+                    }
+                } else {
+                    eprintln!(
+                        "WARNING: Unrecognized HackRF device format: '{}' \n\
+                         Expected device index (0, 1, 2, ...).\n\
+                         Defaulting to device 0.",
+                        device_str
+                    );
+                    HackrfDeviceConfig {
+                        device: Some(0),
+                        lna_gain: None,
+                        vga_gain: None,
+                        amp_enable: None,
+                        freq_offset_hz: None,
+                    }
+                };
+
+                Address::Hackrf(HackrfPath { config })
             }
             #[cfg(feature = "soapy")]
             "soapy" => {
@@ -490,7 +605,8 @@ impl FromStr for Source {
             #[cfg(any(
                 feature = "rtlsdr",
                 feature = "soapy",
-                feature = "airspy"
+                feature = "airspy",
+                feature = "hackrf"
             ))]
             bias_tee: None,
             #[cfg(feature = "sdr")]
@@ -513,7 +629,8 @@ impl FromStr for Source {
                 #[cfg(any(
                     feature = "rtlsdr",
                     feature = "soapy",
-                    feature = "airspy"
+                    feature = "airspy",
+                    feature = "hackrf"
                 ))]
                 if let Some(bias_str) = param.strip_prefix("bias_tee=") {
                     // Parse bias_tee value (true/false, 1/0, yes/no)
@@ -600,6 +717,15 @@ impl Source {
                 };
                 build_serial(&format!("airspy:{device_str}"))
             }
+            #[cfg(feature = "hackrf")]
+            Address::Hackrf(path) => {
+                let device_str = if let Some(idx) = path.config.device {
+                    idx.to_string()
+                } else {
+                    "0".to_string()
+                };
+                build_serial(&format!("hackrf:{device_str}"))
+            }
             #[cfg(feature = "soapy")]
             Address::Soapy(soapy_path) => {
                 build_serial(&format!("soapy:{}", soapy_path.soapy))
@@ -663,6 +789,7 @@ impl Source {
                         sample_rate: sample_rate as u32,
                         gain,
                         bias_tee,
+                        freq_correction_ppm: 0,
                     };
                     let config = DeviceConfig::RtlSdr(rtlsdr_config);
                     let source = IqAsyncSource::from_device_config(&config)
@@ -695,8 +822,11 @@ impl Source {
                 };
 
                 let gain = self.gain.clone().unwrap_or(Gain::Auto);
-                let sample_rate = self.sample_rate.unwrap_or(6.0e6);
+                let sample_rate = self.sample_rate.unwrap_or(RATE_6M);
                 let bias_tee = self.bias_tee.unwrap_or(false);
+                let lna_gain = config.lna_gain;
+                let mixer_gain = config.mixer_gain;
+                let vga_gain = config.vga_gain;
 
                 tokio::spawn(async move {
                     let airspy_config = AirspyConfig {
@@ -706,9 +836,10 @@ impl Source {
                         gain,
                         bias_tee,
                         packing: false,
-                        lna_gain: None,
-                        mixer_gain: None,
-                        vga_gain: None,
+                        lna_gain,
+                        mixer_gain,
+                        vga_gain,
+                        gain_mode: AirspyGainMode::Sensitivity,
                     };
 
                     let source = IqAsyncSource::Airspy(
@@ -717,6 +848,62 @@ impl Source {
                         )
                         .expect("Failed to create Airspy source"),
                     );
+
+                    tokio::select! {
+                        _ = iqread::receiver(tx, source, serial, sample_rate, name) => {},
+                        _ = shutdown_rx.recv() => {
+                            // Silent shutdown
+                        }
+                    }
+                })
+            }
+            #[cfg(feature = "hackrf")]
+            Address::Hackrf(path) => {
+                let config = &path.config;
+                let device_idx = config.device.unwrap_or(0);
+                let amp_enable = config.amp_enable.unwrap_or(false);
+                let lna_gain = config.lna_gain;
+                let vga_gain = config.vga_gain;
+                let freq_offset = config.freq_offset_hz.unwrap_or(0) as i64;
+
+                let gain = if lna_gain.is_some() || vga_gain.is_some() {
+                    // Use element-based gains if specified
+                    let mut elements = Vec::new();
+                    if let Some(lna) = lna_gain {
+                        elements.push(GainElement {
+                            name: GainElementName::Lna,
+                            value_db: lna as f64,
+                        });
+                    }
+                    if let Some(vga) = vga_gain {
+                        elements.push(GainElement {
+                            name: GainElementName::Vga,
+                            value_db: vga as f64,
+                        });
+                    }
+                    Gain::Elements(elements)
+                } else {
+                    // Use gain from config or default to 40 dB for HackRF
+                    self.gain.clone().unwrap_or(Gain::Manual(40.0))
+                };
+                let sample_rate = self.sample_rate.unwrap_or(RATE_6M);
+                let bias_tee = self.bias_tee.unwrap_or(false);
+
+                tokio::spawn(async move {
+                    let center_freq = (MODES_FREQ as i64 + freq_offset) as u64;
+                    let hackrf_config = HackRfConfig {
+                        device_index: device_idx,
+                        center_freq,
+                        sample_rate: sample_rate as u32,
+                        gain,
+                        amp_enable,
+                        bias_tee,
+                    };
+
+                    let config = DeviceConfig::HackRf(hackrf_config);
+                    let source = IqAsyncSource::from_device_config(&config)
+                        .await
+                        .expect("Failed to create HackRF source");
 
                     tokio::select! {
                         _ = iqread::receiver(tx, source, serial, sample_rate, name) => {},
@@ -1049,6 +1236,39 @@ mod test {
             }
         }
 
+        #[cfg(feature = "hackrf")]
+        {
+            let source = Source::from_str("hackrf:");
+            assert!(source.is_ok());
+            if let Ok(Source { address, .. }) = source {
+                assert!(matches!(address, Address::Hackrf(_)));
+            }
+
+            let source = Source::from_str("hackrf://1");
+            assert!(source.is_ok());
+            if let Ok(Source { address, .. }) = source {
+                if let Address::Hackrf(path) = address {
+                    assert_eq!(path.config.device, Some(1));
+                } else {
+                    unreachable!();
+                }
+            }
+
+            let source = Source::from_str("hackrf://?LFBO");
+            assert!(source.is_ok());
+            if let Ok(Source {
+                address,
+                latitude,
+                longitude,
+                ..
+            }) = source
+            {
+                assert!(matches!(address, Address::Hackrf(_)));
+                assert_eq!(latitude, Some(43.628101));
+                assert_eq!(longitude, Some(1.367263));
+            }
+        }
+
         let source = Source::from_str("http://default");
         assert!(source.is_err());
 
@@ -1194,6 +1414,31 @@ mod test {
                     path.config.serial,
                     Some("0x35AC63DC2D8C7A4F".to_string())
                 );
+            }
+        }
+
+        #[cfg(feature = "hackrf")]
+        {
+            let toml = r#"
+                hackrf = { device = 0 }
+                latitude = 43.5993189
+                longitude = 1.4362472
+            "#;
+            let source: Source = toml::from_str(toml)
+                .expect("Failed to parse HackRF TOML with device");
+            assert!(matches!(source.address, Address::Hackrf(_)));
+            if let Address::Hackrf(path) = &source.address {
+                assert_eq!(path.config.device, Some(0));
+            }
+
+            let toml = r#"
+                hackrf = { device = 1 }
+            "#;
+            let source: Source = toml::from_str(toml)
+                .expect("Failed to parse HackRF TOML with device 1");
+            assert!(matches!(source.address, Address::Hackrf(_)));
+            if let Address::Hackrf(path) = &source.address {
+                assert_eq!(path.config.device, Some(1));
             }
         }
 

@@ -149,13 +149,14 @@ struct Options {
     /// List the sources of data following the format \[host:\]port\[\@reference\]
     ///
     /// `host` can be a DNS name, an IP address, `rtlsdr` (for RTL-SDR dongles),
-    /// or `airspy` (for Airspy Mini/R2/HF+ devices),
+    /// `airspy` (for Airspy Mini/R2/HF+ devices), or `hackrf` (for HackRF One/Micro devices),
     /// `port` must be a number,
     /// `reference` can be LFPG for major airports, `43.3,1.35` otherwise.
     ///
     /// To verify your SDR device is detected before running jet1090:
     /// - RTL-SDR: `rtl_test -t` or `rtl_eeprom`
     /// - Airspy: `airspy_info`
+    /// - HackRF: `hackrf_info`
     /// - SoapySDR devices (including PlutoSDR): `SoapySDRUtil --find` or `SoapySDRUtil --probe`
     ///
     /// More details are available at: <https://mode-s.org/jet1090/sources>
