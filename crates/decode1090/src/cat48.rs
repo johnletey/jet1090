@@ -88,7 +88,14 @@ pub async fn process_cat48(
     only_rollcall: bool,
     with_bds: bool,
     exclude_zero: bool,
+    filter_bds: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Parse BDS filter codes
+    let bds_filter: Option<Vec<u8>> = filter_bds.map(|s| {
+        s.split(',')
+            .filter_map(|code| u8::from_str_radix(code.trim(), 16).ok())
+            .collect()
+    });
     // Expand glob patterns and collect all file paths
     let mut files: Vec<std::path::PathBuf> = Vec::new();
     for pattern in &inputs {
@@ -135,6 +142,7 @@ pub async fn process_cat48(
     };
 
     // Process files in parallel using rayon
+    let bds_filter_ref = &bds_filter;
     let processed_data: Vec<_> = files
         .par_iter()
         .map(|file_path| {
@@ -148,6 +156,14 @@ pub async fn process_cat48(
             // Apply filters
             let filtered_records: Vec<Cat48Record> = records
                 .into_iter()
+                // Apply exclude_zero early so BDS filter sees only non-zero records
+                .map(|record| {
+                    if exclude_zero {
+                        filter_zero_bds_records(record)
+                    } else {
+                        record
+                    }
+                })
                 .filter(|record| {
                     // Filter: with_bds
                     if with_bds && !record.has_bds_data() {
@@ -170,6 +186,23 @@ pub async fn process_cat48(
                                 filtered += 1;
                                 return false;
                             }
+                        }
+                    }
+
+                    // Filter: BDS code filter
+                    if let Some(ref codes) = bds_filter_ref {
+                        let has_match = record
+                            .mode_s_mb_data
+                            .as_ref()
+                            .map(|mb| {
+                                mb.records
+                                    .iter()
+                                    .any(|r| codes.contains(&r.bds_code))
+                            })
+                            .unwrap_or(false);
+                        if !has_match {
+                            filtered += 1;
+                            return false;
                         }
                     }
 
@@ -203,14 +236,6 @@ pub async fn process_cat48(
                 .partial_cmp(&b_time)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-    }
-
-    // Apply exclude_zero filter if enabled (filters individual BDS records, not CAT48)
-    if exclude_zero {
-        all_records = all_records
-            .into_iter()
-            .map(filter_zero_bds_records)
-            .collect();
     }
 
     if array {

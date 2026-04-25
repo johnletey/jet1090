@@ -61,6 +61,11 @@ enum Commands {
         /// Filter: exclude records with all-zero BDS payload
         #[arg(long)]
         exclude_zero: bool,
+
+        /// Filter: only include records with specific declared BDS codes
+        /// Comma-separated hex codes, e.g. "44,45" or "40,50,60"
+        #[arg(long)]
+        filter_bds: Option<String>,
     },
     /// Decode BDS payload (7 bytes)
     Bds {
@@ -114,6 +119,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             only_rollcall,
             with_bds,
             exclude_zero,
+            filter_bds,
         }) => {
             return cat48::process_cat48(
                 inputs,
@@ -122,6 +128,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 only_rollcall,
                 with_bds,
                 exclude_zero,
+                filter_bds,
             )
             .await;
         }
