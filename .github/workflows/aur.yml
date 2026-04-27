@@ -11,10 +11,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - pkg: fmradio-bin
-            bin: fmradio
-          - pkg: dabradio-bin
-            bin: dabradio
+          - pkg: jet1090-bin
+            bin: jet1090
+          - pkg: decode1090-bin
+            bin: decode1090
     steps:
       - uses: actions/checkout@v4
 
