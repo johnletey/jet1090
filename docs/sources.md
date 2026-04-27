@@ -2,13 +2,15 @@
 
 `jet1090` decodes feeds of Mode S messages coming from a variety of sources.
 
-## RTL-SDR dongles
+## Software-defined radio
+
+### RTL-SDR dongles
 
 The most common source is the RTL-SDR dongle.
 
 ![rtl-sdr dongle](images/rtlsdr.png){: style="height:150px"}
 
-`jet1090` must be [compiled with the `rtlsdr` feature](install.md) in order to support RTL-SDR dongles.
+`jet1090` must be [compiled with the `rtlsdr` feature](install.md) (default) in order to support RTL-SDR dongles.
 
 Before running `jet1090`, you can verify your dongle is detected by the system:
 
@@ -24,12 +26,6 @@ Once verified, start decoding incoming messages. Use the `--verbose` option to c
 
 ```sh
 $ jet1090 --verbose rtlsdr://
-Found Rafael Micro R820T tuner
-[INFO] Opening Generic RTL2832U OEM :: 00000001...
-Found Rafael Micro R820T tuner
-[INFO] Using format CS16.
-Allocating 15 zero-copy buffers
-
 {"timestamp":1735082050.8826132,"frame":"8d34768d58b524b5986843dfee26","df":"17","icao24":"34768d","bds":"05","tc":11,"NUCp":7,"NICb":0,"altitude":35050,"source":"barometric","parity":"odd","lat_cpr":23244,"lon_cpr":26691,"metadata":[{"system_timestamp":1735082050.8826132,"rssi":-28.450745,"serial":14924845721654670821,"name":"rtlsdr"}]}
 {"timestamp":1735082051.040175,"frame":"8d34768de11200000000002919db","df":"17","icao24":"34768d","bds":"61","subtype":"emergency_priority","emergency_state":"none","squawk":"2010","metadata":[{"system_timestamp":1735082051.040175,"rssi":-29.93521,"serial":14924845721654670821,"name":"rtlsdr"}]}
 ```
@@ -61,9 +57,9 @@ Allocating 15 zero-copy buffers
     jet1090 rtlsdr://serial=00000001 rtlsdr://serial=00000002
     ```
 
-## Airspy devices
+### Airspy devices
 
-`jet1090` must be [compiled with the `airspy` feature](install.md) to support [Airspy Mini](https://airspy.com/airspy-mini/), [Airspy R2](https://airspy.com/airspy-r2/) or [Airspy HF+](https://airspy.com/airspy-hf-discovery/) devices.
+`jet1090` must be [compiled with the `airspy` feature](install.md) (default) to support [Airspy Mini](https://airspy.com/airspy-mini/), [Airspy R2](https://airspy.com/airspy-r2/) or [Airspy HF+](https://airspy.com/airspy-hf-discovery/) devices.
 
 ![airspy mini dongle](images/airspy_mini.png){: style="height:150px"}
 
@@ -80,7 +76,7 @@ Once verified, start decoding:
 jet1090 --verbose airspy://
 
 # Explicit device index
-jet1090 --verbose airspy://1
+jet1090 --verbose airspy://0
 
 # By serial
 jet1090 --verbose airspy://serial=0x35AC63DC2D8C7A4F
@@ -88,9 +84,37 @@ jet1090 --verbose airspy://serial=0x35AC63DC2D8C7A4F
 
 For more details on Airspy configuration options, see the [configuration documentation](config.md#sources).
 
-## SoapySDR devices
+### HackRF devices
 
-`jet1090` must be [compiled with the `soapy` feature](install.md) to support SoapySDR-compatible devices (HackRF, LimeSDR, PlutoSDR, etc.).
+`jet1090` must be [compiled with the `hackrf` feature](install.md) (default) to support [HackRF One](https://greatscottgadgets.com/hackrf/one/) and [HackRF Pro](https://greatscottgadgets.com/hackr/pro/) direct-sampling software-defined radios.
+
+![hackrf one](images/hackrf.jpg){: style="height:150px"}
+
+Before running `jet1090`, verify your HackRF is detected:
+
+```sh
+hackrf_info
+```
+
+Once verified, start decoding:
+
+```sh
+# Default device (index 0)
+jet1090 --verbose hackrf://
+
+# Explicit device index
+jet1090 --verbose hackrf://0
+```
+
+For more details on HackRF configuration options, see the [configuration documentation](config.md#hackrf).
+
+### SoapySDR devices
+
+`jet1090` must be [compiled with the `soapy` feature](install.md) to support SoapySDR-compatible devices (BladeRF, LimeSDR, PlutoSDR, etc.). This is a fallback option for natively not supported devices.
+
+!!! warning
+
+    Distributed binaries are not compiled with the `soapy` feature.
 
 Before running `jet1090`, verify your SoapySDR device is detected:
 

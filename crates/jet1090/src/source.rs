@@ -335,6 +335,36 @@ impl<'de> Deserialize<'de> for Source {
             ));
         }
 
+        // Validate that device-level gain params and source-level gain are not both set
+        #[cfg(feature = "sdr")]
+        if helper.gain.is_some() {
+            #[cfg(feature = "airspy")]
+            if let Address::Airspy(ref path) = helper.address {
+                let has_element_gains = path.config.lna_gain.is_some()
+                    || path.config.mixer_gain.is_some()
+                    || path.config.vga_gain.is_some();
+                if has_element_gains {
+                    return Err(de::Error::custom(
+                        "Cannot specify both `gain` (source level) and per-element gains \
+                         (`lna_gain`, `mixer_gain`, `vga_gain`) inside `airspy = {{ ... }}`. \
+                         Use one or the other.",
+                    ));
+                }
+            }
+            #[cfg(feature = "hackrf")]
+            if let Address::Hackrf(ref path) = helper.address {
+                let has_element_gains = path.config.lna_gain.is_some()
+                    || path.config.vga_gain.is_some();
+                if has_element_gains {
+                    return Err(de::Error::custom(
+                        "Cannot specify both `gain` (source level) and per-element gains \
+                         (`lna_gain`, `vga_gain`) inside `hackrf = {{ ... }}`. \
+                         Use one or the other.",
+                    ));
+                }
+            }
+        }
+
         Ok(Source {
             address: helper.address,
             name: helper.name,
@@ -821,7 +851,9 @@ impl Source {
                     AirspyDeviceSelector::Index(0)
                 };
 
-                let gain = self.gain.clone().unwrap_or(Gain::Auto);
+                // Default sensitivity gain is 50 (max ~21 for Airspy R2 in sensitivity
+                // mode, but the library accepts 0-100 as a percentage).
+                let gain = self.gain.clone().unwrap_or(Gain::Manual(50.0));
                 let sample_rate = self.sample_rate.unwrap_or(RATE_6M);
                 let bias_tee = self.bias_tee.unwrap_or(false);
                 let lna_gain = config.lna_gain;
@@ -861,13 +893,15 @@ impl Source {
             Address::Hackrf(path) => {
                 let config = &path.config;
                 let device_idx = config.device.unwrap_or(0);
-                let amp_enable = config.amp_enable.unwrap_or(false);
+                // Default: amp enabled, freq offset -75 kHz (avoids DC spike at 1090 MHz)
+                let amp_enable = config.amp_enable.unwrap_or(true);
                 let lna_gain = config.lna_gain;
                 let vga_gain = config.vga_gain;
-                let freq_offset = config.freq_offset_hz.unwrap_or(0) as i64;
+                let freq_offset =
+                    config.freq_offset_hz.unwrap_or(-75000) as i64;
 
                 let gain = if lna_gain.is_some() || vga_gain.is_some() {
-                    // Use element-based gains if specified
+                    // Use element-based gains explicitly set in hackrf = { ... }
                     let mut elements = Vec::new();
                     if let Some(lna) = lna_gain {
                         elements.push(GainElement {
@@ -882,9 +916,21 @@ impl Source {
                         });
                     }
                     Gain::Elements(elements)
+                } else if let Some(g) = self.gain.clone() {
+                    // Source-level linear gain override
+                    g
                 } else {
-                    // Use gain from config or default to 40 dB for HackRF
-                    self.gain.clone().unwrap_or(Gain::Manual(40.0))
+                    // Defaults: LNA=40 dB, VGA=55 dB (no external LNA, amp replaces it)
+                    Gain::Elements(vec![
+                        GainElement {
+                            name: GainElementName::Lna,
+                            value_db: 40.0,
+                        },
+                        GainElement {
+                            name: GainElementName::Vga,
+                            value_db: 55.0,
+                        },
+                    ])
                 };
                 let sample_rate = self.sample_rate.unwrap_or(RATE_6M);
                 let bias_tee = self.bias_tee.unwrap_or(false);

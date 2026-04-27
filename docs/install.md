@@ -6,8 +6,6 @@ The latest release and installation instructions are published [on GitHub Releas
 
 === "Shell script"
 
-    This script requires that you install the [SoapySDR dependencies](#dependencies).
-
     ```sh
     curl --proto '=https' --tlsv1.2 -LsSf https://github.com/xoolive/jet1090/releases/latest/download/jet1090-installer.sh | sh
     ```
@@ -18,23 +16,13 @@ The latest release and installation instructions are published [on GitHub Releas
     jet1090-update
     ```
 
-=== "Powershell (Windows)"
-
-    This script requires that you install the [SoapySDR dependencies](#dependencies).
+=== "Arch Linux"
 
     ```sh
-    powershell -ExecutionPolicy ByPass -c "irm https://github.com/xoolive/jet1090/releases/latest/download/jet1090-installer.ps1 | iex"
+    pacman -S jet1090
     ```
 
-    Update to next release with:
-
-    ```sh
-    jet1090-update
-    ```
-
-=== "Homebrew"
-
-    SoapySDR dependencies are automatically installed.
+=== "Homebrew (Mac OS)"
 
     ```sh
     brew install xoolive/homebrew/jet1090
@@ -46,54 +34,78 @@ The latest release and installation instructions are published [on GitHub Releas
     brew upgrade
     ```
 
+=== "Powershell (Windows)"
+
+    ```sh
+    powershell -ExecutionPolicy ByPass -c "irm https://github.com/xoolive/jet1090/releases/latest/download/jet1090-installer.ps1 | iex"
+    ```
+
+    - Update to next release with:
+      ```sh
+      jet1090-update
+      ```
+
+    - You will also need [Zadig](https://zadig.akeo.ie/) to install the drivers for your SDR (admin rights necessary).
+
 ## Dependencies
 
-The prebuilt binaries are compiled with all features activated. In particular, SoapySDR-based sources may require extra dependencies.
+The prebuilt binaries are compiled with default features activated.
 
-=== "Ubuntu"
-
-    ```sh
-    sudo apt install libsoapysdr-dev soapysdr-module-rtlsdr
-    ```
-
-=== "Arch Linux"
-
-    ```sh
-    sudo pacman -S soapyrtlsdr
-    ```
-
-=== "Homebrew"
-
-    Dependencies are automatically installed if you install `jet1090` through Homebrew. You have to run the command to build the project from source.
-
-    ```sh
-    brew install soapysdr soapyrtlsdr
-    ```
-
-=== "Windows"
-
-    - Install [PothosSDR](https://downloads.myriadrf.org/builds/PothosSDR/PothosSDR-2021.07.25-vc16-x64.exe). If you don't have admin rights, you may unzip the archive and add the `bin/` folder to your `PATH` variable.
-    - You will also need [Zadig](https://zadig.akeo.ie/) to install the drivers for your RTL-SDR dongle (admin rights necessary).
+If you compile the executable with the `soapy` feature, you will need extra dependencies.
 
 ## Build from source
 
 === "cargo"
 
-    You will need:
-
-    - the SoapySDR dependencies to compile with the `soapy` feature.
-    - a protobuf compiler to compile with the `sero` feature.
-
+    Build with all features:
     ```sh
     cargo install --all-features jet1090
     ```
 
-    Note that a protobuf compiler is also necessary to compile the project with the `sero` feature:
+    Build with no default features:
+    ```sh
+    cargo install --no-default-features jet1090
+    ```
+
+    You will need:
+
+    - the SoapySDR dependencies to compile with the `soapy` feature.
+
+    === "Ubuntu"
+
+        ```sh
+        sudo apt install libsoapysdr-dev  # plus support for other devices
+        ```
+
+    === "Arch Linux"
+
+        ```sh
+        pacman -S soapysdr
+        ```
+
+    === "Homebrew"
+
+        ```sh
+        brew install soapysdr  # plus support for other devices
+        ```
+
+    === "Windows"
+
+        - Install [PothosSDR](https://downloads.myriadrf.org/builds/PothosSDR/PothosSDR-2021.07.25-vc16-x64.exe). If you don't have admin rights, you may unzip the archive and add the `bin/` folder to your `PATH` variable.
+
+    - a protobuf compiler to compile with the `sero` feature.
+
 
     === "Ubuntu"
 
         ```sh
         sudo apt install protobuf-compiler
+        ```
+
+    === "Arch Linux"
+
+        ```sh
+        pacman -S protobuf
         ```
 
     === "Homebrew"

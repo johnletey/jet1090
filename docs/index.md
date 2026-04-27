@@ -68,7 +68,7 @@ By design, the language and standard low-level libraries (e.g., `trino` for the 
 | **Programming language** | :simple-c:       | :simple-python:  | :simple-rust: :simple-python: :simple-webassembly: |
 | **Extensive decoding**   | :material-close: | :material-check: | :material-check:                                   |
 | **Multi-feed**           | :material-check: | :material-close: | :material-check:                                   |
-| **SDR**                  | :material-check: | RTL-SDR only     | RTL-SDR only                                       |
+| **SDR**                  | :material-check: | RTL-SDR only     | :material-check: ([sources](sources.md))           |
 | **Real-time feed-out**   | Beast format     | :material-close: | :material-check:                                   |
 
 !!! example

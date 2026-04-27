@@ -11,6 +11,7 @@ edition.workspace = true
 homepage.workspace = true
 
 [features]
+default = ['rtlsdr', 'airspy', 'hackrf', 'sero', 'ssh']
 sdr = ['rs1090/sdr', 'dep:desperado']
 airspy = ['sdr', 'rs1090/airspy']
 hackrf = ['sdr', 'rs1090/hackrf']
