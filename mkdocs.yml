@@ -1,6 +1,6 @@
 site_name: jet1090
 site_description: High-performance ADS-B and Mode S decoding for real-time applications
-repo_name: xoolive/rs1090
+repo_name: xoolive/jet1090
 repo_url: https://github.com/xoolive/jet1090/
 site_url: https://mode-s.org/jet1090/
 nav:
@@ -13,7 +13,7 @@ nav:
 
 theme:
   name: material
-  logo: images/jet1090-logo.png
+  logo: images/favicon.png
   favicon: images/favicon.png
   features:
     - content.code.annotate
