@@ -19,7 +19,7 @@ The latest release and installation instructions are published [on GitHub Releas
 === "Arch Linux"
 
     ```sh
-    pacman -S jet1090-bin
+    yay -S jet1090-bin
     ```
 
 === "Homebrew (Mac OS)"
