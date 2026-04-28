@@ -199,11 +199,10 @@ pub async fn update_snapshot(
                             }
                         }
                     }
-                    ME::BDS08 { inner: bds08, .. } => {
-                        if !bds08.callsign.contains("#") {
-                            aircraft.cur.callsign =
-                                Some(bds08.callsign.to_string())
-                        }
+                    ME::BDS08 { inner: bds08, .. }
+                        if !bds08.callsign.contains("#") =>
+                    {
+                        aircraft.cur.callsign = Some(bds08.callsign.to_string())
                     }
                     ME::BDS09(bds09) => {
                         aircraft.cur.vertical_rate = bds09.vertical_rate;

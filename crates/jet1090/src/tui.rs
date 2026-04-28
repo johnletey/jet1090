@@ -78,11 +78,10 @@ impl EventHandler {
                     match maybe_event {
                       Some(Ok(evt)) => {
                         match evt {
-                          crossterm::event::Event::Key(key) => {
-                            if key.kind == crossterm::event::KeyEventKind::Press {
+                          crossterm::event::Event::Key(key)
+                            if key.kind == crossterm::event::KeyEventKind::Press => {
                               tx.send(Event::Key(key)).unwrap();
-                            }
-                          },
+                            },
                           crossterm::event::Event::Resize(col,_) => {width = col},
                           crossterm::event::Event::Mouse(event) => {
                             if event.kind == crossterm::event::MouseEventKind::ScrollUp {
