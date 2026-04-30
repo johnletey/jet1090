@@ -36,7 +36,8 @@ pub struct GICBCapabilityReportPart1 {
     #[deku(bits = "1", map = "fail_if_true")]
     #[serde(skip_serializing_if = "is_false")]
     pub bds36: bool,
-    #[deku(bits = "1", map = "fail_if_true")]
+    #[deku(bits = "1")]
+    #[cfg_attr(feature = "bds-infer", deku(map = "fail_if_true"))]
     #[serde(skip_serializing_if = "is_false")]
     pub bds35: bool,
     #[deku(bits = "1", map = "fail_if_true")]
@@ -72,7 +73,8 @@ pub struct GICBCapabilityReportPart1 {
     #[deku(bits = "1", map = "fail_if_true")]
     #[serde(skip_serializing_if = "is_false")]
     pub bds2a: bool,
-    #[deku(bits = "1", map = "fail_if_true")]
+    #[deku(bits = "1")]
+    #[cfg_attr(feature = "bds-infer", deku(map = "fail_if_true"))]
     #[serde(skip_serializing_if = "is_false")]
     pub bds29: bool,
     #[deku(bits = "1", map = "fail_if_true")]
@@ -84,22 +86,27 @@ pub struct GICBCapabilityReportPart1 {
     #[deku(bits = "1", map = "fail_if_true")]
     #[serde(skip_serializing_if = "is_false")]
     pub bds26: bool,
-    #[deku(bits = "1", map = "fail_if_true")]
+    #[deku(bits = "1")]
+    #[cfg_attr(feature = "bds-infer", deku(map = "fail_if_true"))]
     #[serde(skip_serializing_if = "is_false")]
     pub bds25: bool,
-    #[deku(bits = "1", map = "fail_if_true")]
+    #[deku(bits = "1")]
+    #[cfg_attr(feature = "bds-infer", deku(map = "fail_if_true"))]
     #[serde(skip_serializing_if = "is_false")]
     pub bds24: bool,
-    #[deku(bits = "1", map = "fail_if_true")]
+    #[deku(bits = "1")]
+    #[cfg_attr(feature = "bds-infer", deku(map = "fail_if_true"))]
     #[serde(skip_serializing_if = "is_false")]
     pub bds23: bool,
-    #[deku(bits = "1", map = "fail_if_true")]
+    #[deku(bits = "1")]
+    #[cfg_attr(feature = "bds-infer", deku(map = "fail_if_true"))]
     #[serde(skip_serializing_if = "is_false")]
     pub bds22: bool,
     #[deku(bits = "1")]
     #[serde(skip_serializing_if = "is_false")]
     pub bds21: bool,
-    #[deku(bits = "1", map = "fail_if_false")]
+    #[deku(bits = "1")]
+    #[cfg_attr(feature = "bds-infer", deku(map = "fail_if_false"))]
     #[serde(skip_serializing_if = "is_false")]
     pub bds20: bool,
     #[deku(bits = "1")]
@@ -120,19 +127,24 @@ pub struct GICBCapabilityReportPart1 {
     #[deku(bits = "1")]
     #[serde(skip_serializing_if = "is_false")]
     pub bds1a: bool,
-    #[deku(bits = "1", map = "fail_if_false")]
+    #[deku(bits = "1")]
+    #[cfg_attr(feature = "bds-infer", deku(map = "fail_if_false"))]
     #[serde(skip_serializing_if = "is_false")]
     pub bds19: bool,
-    #[deku(bits = "1", map = "fail_if_false")]
+    #[deku(bits = "1")]
+    #[cfg_attr(feature = "bds-infer", deku(map = "fail_if_false"))]
     #[serde(skip_serializing_if = "is_false")]
     pub bds18: bool,
-    #[deku(bits = "1", map = "fail_if_false")]
+    #[deku(bits = "1")]
+    #[cfg_attr(feature = "bds-infer", deku(map = "fail_if_false"))]
     #[serde(skip_serializing_if = "is_false")]
     pub bds17: bool,
-    #[deku(bits = "1", map = "fail_if_true")]
+    #[deku(bits = "1")]
+    #[cfg_attr(feature = "bds-infer", deku(map = "fail_if_true"))]
     #[serde(skip_serializing_if = "is_false")]
     pub bds16: bool,
-    #[deku(bits = "1", map = "fail_if_true")]
+    #[deku(bits = "1")]
+    #[cfg_attr(feature = "bds-infer", deku(map = "fail_if_true"))]
     #[serde(skip_serializing_if = "is_false")]
     pub bds15: bool,
     #[deku(bits = "1", map = "fail_if_true")]
@@ -201,6 +213,7 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
+#[cfg(feature = "bds-infer")]
 fn fail_if_false(value: bool) -> Result<bool, DekuError> {
     if value {
         Ok(value)

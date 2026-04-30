@@ -1,4 +1,5 @@
 use deku::prelude::*;
+#[cfg(feature = "bds-infer")]
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, trace};
@@ -26,7 +27,7 @@ use tracing::{debug, trace};
  * **Aircraft Registration Number** (bits 2-43): 7 characters, 6 bits each
  *   - Character encoding per ICAO Annex 10, Vol IV, Table 3-7
  *   - Valid characters: A-Z (1-26), 0-9 (48-57), # (0), space (32)
- *   - Example formats: "N12345", "G#ABCD", "VH#VKI"
+ *   - Example formats: "N12345", "GABCD", "VHVKI" (national dash stripped)
  *   - Must match pattern: [A-Z0-9]+[\\s#]?[A-Z0-9]+
  *
  * **Airline Registration Status** (bit 44):
@@ -83,8 +84,33 @@ pub struct AircraftAndAirlineRegistrationMarkings {
     pub airline_registration: Option<String>,
 }
 
+// Per ICAO Annex 10 Vol IV Table 3-7, the 6-bit BDS 2,1 alphabet only defines
+// A–Z (1–26), SPACE (32), and 0–9 (48–57). There is **no hyphen character**
+// in the alphabet. Real registrations such as "B-2487" must be transmitted
+// without the dash; the avionics use one of three placeholder values for
+// the dash slot, and we treat all three the same way (strip them):
+//
+//   * 32 (100000)  — SPACE: the standards-conformant placeholder.
+//   * 0  (000000)  — NULL:  used by some implementations; not in the alphabet
+//                    but interpreted here as an empty character (≡ space).
+//   * 45 (101101)  — dash placeholder observed empirically in our Jan 2025
+//                    dataset (B#7838, VH#8MR, XA#ADD, ...). Code 45 is in
+//                    the reserved range (33–47) but is used consistently by
+//                    multiple avionics vendors as the national dash. Treated
+//                    as a placeholder rather than noise.
+//
+// Other reserved code points (27–31, 33–44, 46–47, 58–63) are kept as '#'
+// so that genuinely-corrupt or out-of-band payloads (e.g. random BDS 4,0
+// bits decoded as BDS 2,1 character noise) remain visible to downstream.
 const CHAR_LOOKUP: &[u8; 64] =
-    b"#ABCDEFGHIJKLMNOPQRSTUVWXYZ##### ###############0123456789######";
+    b" ABCDEFGHIJKLMNOPQRSTUVWXYZ##### ############-##0123456789######";
+
+/// Returns true when this 6-bit code is a national-dash placeholder that
+/// should be stripped from the decoded registration string.
+#[inline]
+fn is_dash_placeholder(c: u8) -> bool {
+    c == 0 || c == 32 || c == 45
+}
 
 pub fn aircraft_registration_read<
     R: deku::no_std_io::Read + deku::no_std_io::Seek,
@@ -96,12 +122,16 @@ pub fn aircraft_registration_read<
     for _ in 0..=6 {
         let c = u8::from_reader_with_ctx(reader, deku::ctx::BitSize(6))?;
         trace!("Reading letter {}", CHAR_LOOKUP[c as usize] as char);
-        if c != 32 {
+        // Strip national-dash placeholders (space / null / 45) so the decoded
+        // string is the dash-less registration (e.g. "B 2487", "B\x002487"
+        // and "B-2487" all decode to "B2487"). Downstream callers can re-insert
+        // the dash from the icao24 range (see patterns.json).
+        if !is_dash_placeholder(c) {
             chars.push(c);
         }
     }
 
-    let all_zeros = chars.iter().all(|&x| x == 0);
+    let all_zeros = chars.is_empty();
     let encoded = chars
         .into_iter()
         .map(|b| CHAR_LOOKUP[b as usize] as char)
@@ -109,13 +139,20 @@ pub fn aircraft_registration_read<
     debug!("Decoded registration: {}", encoded);
 
     if status {
-        let re = Regex::new(r"^[A-Z0-9]+[\s#]?[A-Z0-9]+$").unwrap();
-        if re.is_match(&encoded) {
+        #[cfg(not(feature = "bds-infer"))]
+        {
             Ok(Some(encoded))
-        } else {
-            Err(DekuError::Assertion(
-                format!("Invalid aircraft registration {encoded}").into(),
-            ))
+        }
+        #[cfg(feature = "bds-infer")]
+        {
+            let re = Regex::new(r"^[A-Z0-9]+[\s#]?[A-Z0-9]+$").unwrap();
+            if re.is_match(&encoded) {
+                Ok(Some(encoded))
+            } else {
+                Err(DekuError::Assertion(
+                    format!("Invalid aircraft registration {encoded}").into(),
+                ))
+            }
         }
     } else if all_zeros {
         Ok(None)
@@ -139,11 +176,11 @@ pub fn airline_registration_read<
     for _ in 0..2 {
         let c = u8::from_reader_with_ctx(reader, deku::ctx::BitSize(6))?;
         trace!("Reading letter {}", CHAR_LOOKUP[c as usize] as char);
-        if c != 32 {
+        if !is_dash_placeholder(c) {
             chars.push(c);
         }
     }
-    let all_zeros = chars.iter().all(|&x| x == 0);
+    let all_zeros = chars.is_empty();
     let encoded = chars
         .into_iter()
         .map(|b| CHAR_LOOKUP[b as usize] as char)
@@ -207,7 +244,7 @@ mod tests {
                 aircraft_registration,
                 ..
             } = bds.bds21.unwrap();
-            assert_eq!(aircraft_registration, Some("VH#VKI".to_string()));
+            assert_eq!(aircraft_registration, Some("VHVKI".to_string()));
         } else {
             unreachable!();
         }

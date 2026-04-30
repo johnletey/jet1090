@@ -238,6 +238,7 @@ impl DekuReader<'_, AC13Field> for DF20DataSelector {
         if (9..22).contains(&tc) && tc != 19 {
             let mut input = std::io::Cursor::new(&buf);
             let mut reader = Reader::new(&mut input);
+            reader.skip_bits(5, Order::Msb0)?;
             match AirbornePosition::from_reader_with_ctx(&mut reader, tc) {
                 Ok(bds05) if bds05.alt == ac.0 => result.bds05 = Some(bds05),
                 Ok(_) => (),

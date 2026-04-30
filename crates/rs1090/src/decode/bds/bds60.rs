@@ -256,6 +256,7 @@ fn read_ias<R: deku::no_std_io::Read + deku::no_std_io::Seek>(
         }
     }
 
+    #[cfg(feature = "bds-infer")]
     if (value == 0) | (value > 500) {
         return Err(DekuError::Assertion(
             format!("IAS value {value} is equal to 0 or greater than 500")
@@ -290,6 +291,7 @@ fn read_mach<R: deku::no_std_io::Read + deku::no_std_io::Seek>(
 
     let mach = value as f64 * 2.048 / 512.;
 
+    #[cfg(feature = "bds-infer")]
     if (mach == 0.) | (mach > 1.) {
         return Err(DekuError::Assertion(
             format!("Mach value {mach} equal to 0 or greater than 1 ").into(),
@@ -304,6 +306,7 @@ fn read_mach<R: deku::no_std_io::Read + deku::no_std_io::Seek>(
          * 10000 ft has IAS max to 250, i.e. Mach 0.45
          * forbid IAS > 250 and Mach < 0.5
          */
+        #[cfg(feature = "bds-infer")]
         if (ias > 250) & (mach < 0.4) {
             return Err(DekuError::Assertion(
                 format!(
@@ -313,6 +316,7 @@ fn read_mach<R: deku::no_std_io::Read + deku::no_std_io::Seek>(
             ));
         }
         // this one is easy IAS = 150 (close to take-off) at FL 400 is Mach 0.5
+        #[cfg(feature = "bds-infer")]
         if (ias < 150) & (mach > 0.5) {
             return Err(DekuError::Assertion(
                 format!(
@@ -321,6 +325,8 @@ fn read_mach<R: deku::no_std_io::Read + deku::no_std_io::Seek>(
                 .into(),
             ));
         }
+        #[cfg(not(feature = "bds-infer"))]
+        let _ = ias;
     }
     Ok(Some(mach))
 }
@@ -361,14 +367,14 @@ fn read_vertical<R: deku::no_std_io::Read + deku::no_std_io::Seek>(
         value as i16 * 32
     };
 
+    #[cfg(feature = "bds-infer")]
     if value.abs() > 6000 {
-        Err(DekuError::Assertion(
+        return Err(DekuError::Assertion(
             format!("Vertical rate absolute value {} > 6000", value.abs())
                 .into(),
-        ))
-    } else {
-        Ok(Some(value))
+        ));
     }
+    Ok(Some(value))
 }
 
 #[cfg(test)]

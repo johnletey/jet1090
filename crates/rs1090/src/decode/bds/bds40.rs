@@ -228,6 +228,7 @@ fn read_selected<R: deku::no_std_io::Read + deku::no_std_io::Seek>(
     let value = value * 16;
     // (encoded as a multiple of 16, but rounded to the closest 100 ft)
     let value = (value + 8) / 100 * 100;
+    #[cfg(feature = "bds-infer")]
     if value > 45000 {
         let msg = format!(
             "Value for selected_fms or selected_mcp: {value} ft > 45000 ft"

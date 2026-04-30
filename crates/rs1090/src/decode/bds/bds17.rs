@@ -102,9 +102,13 @@ pub struct CommonUsageGICBCapabilityReport {
     /// Extended squitter event-driven information
     pub bds0a: bool,
 
-    #[deku(bits = "1", map = "fail_if_false")]
+    #[deku(bits = "1")]
+    #[cfg_attr(feature = "bds-infer", deku(map = "fail_if_false"))]
     #[serde(skip_serializing_if = "is_false")]
     /// Aircraft identification
+    /// Note: ICAO spec says this should always be 1, but some real-world
+    /// aircraft report 0. Relaxed (without `bds-infer` feature) to accept
+    /// these.
     pub bds20: bool,
 
     #[deku(bits = "1")]
@@ -205,6 +209,7 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
+#[cfg(feature = "bds-infer")]
 fn fail_if_false(value: bool) -> Result<bool, DekuError> {
     if value {
         Ok(value)

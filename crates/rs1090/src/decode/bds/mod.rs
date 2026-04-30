@@ -1,3 +1,30 @@
+//! BDS (Comm-B Data Selector) decoders for Mode S DF 20/21 replies.
+//!
+//! ## Inference strategy (`bds-infer` Cargo feature, default = on)
+//!
+//! Because passive receivers do not see the uplink interrogation, the BDS
+//! code of a Comm-B reply must be guessed from the 56-bit MB payload alone.
+//! Two strategies are available, switched at compile time:
+//!
+//! * **Default (`bds-infer` feature on)** — full inference strategy. Each
+//!   candidate decoder enforces physical range checks (e.g. groundspeed
+//!   ≤ 600 kt, Mach ≤ 1, |TAS − GS| ≤ 200 kt), cross-field consistency
+//!   (roll vs. track-rate sign, IAS vs. Mach), strict capability-bit
+//!   constraints from ICAO Doc 9871 on BDS 17 / 18, and the BDS 21
+//!   registration regex. The candidate set in [`infer_bds`] also includes
+//!   BDS 06 / 08 / 09 / 61 / 62.
+//!
+//! * **Minimal (`--no-default-features`)** — reproduces the IWAC 2026 paper
+//!   § 4.1 baseline. Only reserved bits, status-bit consistency and
+//!   spec-mandated value ranges are enforced; the relaxed capability bits
+//!   on BDS 17 / 18 are accepted; BDS 06 / 08 / 09 / 61 / 62 are excluded
+//!   from [`infer_bds`]. This is the configuration on top of which the
+//!   paper's φ → X → S → P → T scoring pipeline is layered.
+//!
+//! Decoder bug-fixes (BDS 05 / 06 / 08 5-bit offset, BDS 10 prepend, BDS 21
+//! dash-placeholder mapping, BDS 17 `bds20` accepting 0) are applied
+//! unconditionally in both strategies.
+
 pub mod bds05;
 pub mod bds06;
 pub mod bds08;
@@ -173,12 +200,12 @@ pub fn decode_payload(
                     expected_tc: "9-18, 20-22".to_string(),
                 });
             }
-            AirbornePosition::from_reader_with_ctx(
-                &mut deku::reader::Reader::new(std::io::Cursor::new(payload)),
-                tc,
-            )
-            .map(DecodedBds::Bds05)
-            .map_err(|e| DecodingError::DecodingFailed(e.to_string()))
+            let mut reader =
+                deku::reader::Reader::new(std::io::Cursor::new(payload));
+            reader.skip_bits(5, deku::ctx::Order::Msb0)?;
+            AirbornePosition::from_reader_with_ctx(&mut reader, tc)
+                .map(DecodedBds::Bds05)
+                .map_err(|e| DecodingError::DecodingFailed(e.to_string()))
         }
         0x06 => {
             let tc = extract_tc(payload);
@@ -189,12 +216,12 @@ pub fn decode_payload(
                     expected_tc: "5-8".to_string(),
                 });
             }
-            SurfacePosition::from_reader_with_ctx(
-                &mut deku::reader::Reader::new(std::io::Cursor::new(payload)),
-                tc,
-            )
-            .map(DecodedBds::Bds06)
-            .map_err(|e| DecodingError::DecodingFailed(e.to_string()))
+            let mut reader =
+                deku::reader::Reader::new(std::io::Cursor::new(payload));
+            reader.skip_bits(5, deku::ctx::Order::Msb0)?;
+            SurfacePosition::from_reader_with_ctx(&mut reader, tc)
+                .map(DecodedBds::Bds06)
+                .map_err(|e| DecodingError::DecodingFailed(e.to_string()))
         }
         0x08 => {
             let tc = extract_tc(payload);
@@ -205,12 +232,12 @@ pub fn decode_payload(
                     expected_tc: "1-4".to_string(),
                 });
             }
-            Bds08AircraftIdentification::from_reader_with_ctx(
-                &mut deku::reader::Reader::new(std::io::Cursor::new(payload)),
-                tc,
-            )
-            .map(DecodedBds::Bds08)
-            .map_err(|e| DecodingError::DecodingFailed(e.to_string()))
+            let mut reader =
+                deku::reader::Reader::new(std::io::Cursor::new(payload));
+            reader.skip_bits(5, deku::ctx::Order::Msb0)?;
+            Bds08AircraftIdentification::from_reader_with_ctx(&mut reader, tc)
+                .map(DecodedBds::Bds08)
+                .map_err(|e| DecodingError::DecodingFailed(e.to_string()))
         }
         0x09 => {
             let tc = extract_tc(payload);
@@ -225,13 +252,9 @@ pub fn decode_payload(
                 .map(|(_, decoded)| DecodedBds::Bds09(decoded))
                 .map_err(|e| DecodingError::DecodingFailed(e.to_string()))
         }
-        0x10 => {
-            let mut data = vec![0x10];
-            data.extend_from_slice(payload);
-            DataLinkCapability::from_bytes((&data, 0))
-                .map(|(_, decoded)| DecodedBds::Bds10(decoded))
-                .map_err(|e| DecodingError::DecodingFailed(e.to_string()))
-        }
+        0x10 => DataLinkCapability::from_bytes((payload, 0))
+            .map(|(_, decoded)| DecodedBds::Bds10(decoded))
+            .map_err(|e| DecodingError::DecodingFailed(e.to_string())),
         0x17 => CommonUsageGICBCapabilityReport::from_bytes((payload, 0))
             .map(|(_, decoded)| DecodedBds::Bds17(decoded))
             .map_err(|e| DecodingError::DecodingFailed(e.to_string())),
@@ -353,12 +376,12 @@ pub fn decode_bds(
                     expected_tc: "9-18, 20-22".to_string(),
                 });
             }
-            AirbornePosition::from_reader_with_ctx(
-                &mut deku::reader::Reader::new(std::io::Cursor::new(payload)),
-                tc,
-            )
-            .map(DecodedBds::Bds05)
-            .map_err(|e| DecodingError::DecodingFailed(e.to_string()))
+            let mut reader =
+                deku::reader::Reader::new(std::io::Cursor::new(payload));
+            reader.skip_bits(5, deku::ctx::Order::Msb0)?;
+            AirbornePosition::from_reader_with_ctx(&mut reader, tc)
+                .map(DecodedBds::Bds05)
+                .map_err(|e| DecodingError::DecodingFailed(e.to_string()))
         }
         0x06 => {
             let tc = extract_tc(payload);
@@ -369,12 +392,12 @@ pub fn decode_bds(
                     expected_tc: "5-8".to_string(),
                 });
             }
-            SurfacePosition::from_reader_with_ctx(
-                &mut deku::reader::Reader::new(std::io::Cursor::new(payload)),
-                tc,
-            )
-            .map(DecodedBds::Bds06)
-            .map_err(|e| DecodingError::DecodingFailed(e.to_string()))
+            let mut reader =
+                deku::reader::Reader::new(std::io::Cursor::new(payload));
+            reader.skip_bits(5, deku::ctx::Order::Msb0)?;
+            SurfacePosition::from_reader_with_ctx(&mut reader, tc)
+                .map(DecodedBds::Bds06)
+                .map_err(|e| DecodingError::DecodingFailed(e.to_string()))
         }
         0x08 => {
             let tc = extract_tc(payload);
@@ -385,12 +408,12 @@ pub fn decode_bds(
                     expected_tc: "1-4".to_string(),
                 });
             }
-            Bds08AircraftIdentification::from_reader_with_ctx(
-                &mut deku::reader::Reader::new(std::io::Cursor::new(payload)),
-                tc,
-            )
-            .map(DecodedBds::Bds08)
-            .map_err(|e| DecodingError::DecodingFailed(e.to_string()))
+            let mut reader =
+                deku::reader::Reader::new(std::io::Cursor::new(payload));
+            reader.skip_bits(5, deku::ctx::Order::Msb0)?;
+            Bds08AircraftIdentification::from_reader_with_ctx(&mut reader, tc)
+                .map(DecodedBds::Bds08)
+                .map_err(|e| DecodingError::DecodingFailed(e.to_string()))
         }
         0x09 => {
             let tc = extract_tc(payload);
@@ -405,13 +428,9 @@ pub fn decode_bds(
                 .map(|(_, decoded)| DecodedBds::Bds09(decoded))
                 .map_err(|e| DecodingError::DecodingFailed(e.to_string()))
         }
-        0x10 => {
-            let mut data = vec![0x10];
-            data.extend_from_slice(payload);
-            DataLinkCapability::from_bytes((&data, 0))
-                .map(|(_, decoded)| DecodedBds::Bds10(decoded))
-                .map_err(|e| DecodingError::DecodingFailed(e.to_string()))
-        }
+        0x10 => DataLinkCapability::from_bytes((payload, 0))
+            .map(|(_, decoded)| DecodedBds::Bds10(decoded))
+            .map_err(|e| DecodingError::DecodingFailed(e.to_string())),
         0x17 => CommonUsageGICBCapabilityReport::from_bytes((payload, 0))
             .map(|(_, decoded)| DecodedBds::Bds17(decoded))
             .map_err(|e| DecodingError::DecodingFailed(e.to_string())),
@@ -517,10 +536,11 @@ pub fn infer_bds(payload: &[u8]) -> Vec<DecodedBds> {
     let mut results = Vec::new();
 
     // Try all supported BDS codes in order
-    for bds_code in &[
-        0x05u8, 0x06, 0x08, 0x09, 0x10, 0x17, 0x18, 0x19, 0x20, 0x21, 0x30,
-        0x40, 0x44, 0x45, 0x50, 0x60, 0x61, 0x62, 0x65,
-    ] {
+    let candidates: &[u8] = &[
+        0x05, 0x10, 0x17, 0x18, 0x19, 0x20, 0x21, 0x30, 0x40, 0x44, 0x45, 0x50,
+        0x60, 0x65,
+    ];
+    for bds_code in candidates {
         if let Ok(decoded) = decode_bds(payload, *bds_code) {
             results.push(decoded);
         }

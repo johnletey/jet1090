@@ -261,6 +261,7 @@ fn read_groundspeed<R: deku::no_std_io::Read + deku::no_std_io::Seek>(
     }
 
     let gs = value * 2;
+    #[cfg(feature = "bds-infer")]
     if gs > 600 {
         return Err(DekuError::Assertion(
             format!("Groundspeed value: {gs} > 600").into(),
@@ -308,6 +309,7 @@ fn read_rate<R: deku::no_std_io::Read + deku::no_std_io::Seek>(
     let rate = value as f64 * 8. / 256.;
 
     if let Some(roll) = roll {
+        #[cfg(feature = "bds-infer")]
         if roll * rate < 0. {
             // signs must agree: left wing down = turn left
             return Err(DekuError::Assertion(
@@ -317,6 +319,8 @@ fn read_rate<R: deku::no_std_io::Read + deku::no_std_io::Seek>(
                 .into(),
             ));
         }
+        #[cfg(not(feature = "bds-infer"))]
+        let _ = roll;
     }
 
     Ok(Some(rate))
@@ -347,6 +351,7 @@ fn read_tas<R: deku::no_std_io::Read + deku::no_std_io::Seek>(
 
     let tas = value * 2;
 
+    #[cfg(feature = "bds-infer")]
     if let Some(gs) = gs {
         if !(80..=500).contains(&tas) | ((gs as i16 - tas as i16).abs() > 200) {
             return Err(DekuError::Assertion(format!(
@@ -354,6 +359,8 @@ fn read_tas<R: deku::no_std_io::Read + deku::no_std_io::Seek>(
             ).into()));
         }
     }
+    #[cfg(not(feature = "bds-infer"))]
+    let _ = gs;
     Ok(Some(tas))
 }
 

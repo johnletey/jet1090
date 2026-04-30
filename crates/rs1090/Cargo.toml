@@ -10,6 +10,14 @@ license.workspace = true
 edition.workspace = true
 
 [features]
+default = ['bds-infer']
+# `bds-infer` enables the full BDS inference strategy: physical range checks,
+# cross-field consistency checks and stricter capability-bit constraints used
+# when guessing which BDS code a Comm-B (DF 20/21) MB payload corresponds to.
+# Disabling it (`--no-default-features`) yields the *minimal* strategy that
+# reproduces the §4.1 baseline of the IWAC 2026 paper: only reserved bits,
+# status-bit consistency and spec-mandated value ranges from ICAO Doc 9871.
+bds-infer = []
 aircraft = ['dirs', 'reqwest', 'rusqlite', 'zip']
 airspy = ['sdr', 'desperado/airspy']
 hackrf = ['sdr', 'desperado/hackrf']
