@@ -501,6 +501,19 @@ pub fn decode_bds(
                     expected_tc: "31".to_string(),
                 });
             }
+            // Restrict BDS 65 inference to the Airborne Status Message
+            // (subtype 0). Surface (subtype 1) and Reserved (subtypes 2-7)
+            // are rejected here because, in the absence of an interrogation
+            // context, accepting them inflates the false-positive rate when
+            // BDS 65 is tried as a hypothesis on arbitrary Comm-B payloads.
+            // Subtype is the 3-bit field immediately following the 5-bit TC,
+            // i.e. the lower 3 bits of payload[0].
+            let subtype = payload[0] & 0b111;
+            if subtype != 0 {
+                return Err(DecodingError::DecodingFailed(format!(
+                    "BDS 65 subtype {subtype} rejected (only Airborne / subtype 0 accepted)"
+                )));
+            }
             AircraftOperationStatus::from_bytes((payload, 5))
                 .map(|(_, decoded)| DecodedBds::Bds65(decoded))
                 .map_err(|e| DecodingError::DecodingFailed(e.to_string()))
