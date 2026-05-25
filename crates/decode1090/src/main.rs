@@ -66,6 +66,10 @@ enum Commands {
         /// Comma-separated hex codes, e.g. "44,45" or "40,50,60"
         #[arg(long)]
         filter_bds: Option<String>,
+
+        /// Radar position used to cross-check locally decoded CPR candidates
+        #[arg(long)]
+        radar: Option<Position>,
     },
     /// Decode BDS payload (7 bytes)
     Bds {
@@ -79,9 +83,9 @@ enum Commands {
         #[arg(long, short)]
         bds: Option<String>,
     },
-    /// Decode Mode S messages from files (JSONL, CSV)
+    /// Decode Mode S messages from files (JSONL, CSV; plain, .gz, or .7z)
     File {
-        /// Input files (JSONL or CSV Beast format)
+        /// Input files (JSONL or CSV Beast format; .jsonl.7z and .csv.7z are supported directly)
         #[arg(required = true)]
         inputs: Vec<String>,
 
@@ -120,6 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             with_bds,
             exclude_zero,
             filter_bds,
+            radar,
         }) => {
             return cat48::process_cat48(
                 inputs,
@@ -129,6 +134,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 with_bds,
                 exclude_zero,
                 filter_bds,
+                radar,
             )
             .await;
         }
@@ -178,7 +184,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         serde_json::to_string(&message).unwrap()
                     } else {
                         // BDS inference fallback
-                        let inferred = infer_bds(&bytes);
+                        let inferred = infer_bds(&bytes, None);
                         let mut decoded_map = serde_json::json!({});
                         for decoded in inferred.iter() {
                             let bds_code = bds_code_from_decoded(decoded);
