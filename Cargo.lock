@@ -1203,7 +1203,7 @@ checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
 name = "decode1090"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "clap",
  "deku",
@@ -2521,7 +2521,7 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "jet1090"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "chrono",
  "clap",
@@ -4219,7 +4219,7 @@ dependencies = [
 
 [[package]]
 name = "rs1090"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "ansi_term",
  "approx",
@@ -4262,7 +4262,7 @@ dependencies = [
 
 [[package]]
 name = "rs1090-python"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "hex",
  "pyo3",
@@ -4273,7 +4273,7 @@ dependencies = [
 
 [[package]]
 name = "rs1090-wasm"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "console_error_panic_hook",
  "getrandom 0.2.17",
