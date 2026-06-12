@@ -91,7 +91,7 @@ rtlsdr = { device = 0 }
 gain = 42.5
 ```
 
-Default gain values: 49.6 dB (max value)
+If `gain` is omitted, jet1090 uses its ADS-B per-device default. Use `gain = "auto"` only when you explicitly want device automatic gain control. Default RTL-SDR/Soapy gain is 49.6 dB (max value).
 
 !!! note "Command-line Usage"
 

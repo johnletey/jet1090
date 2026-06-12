@@ -1,10 +1,32 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
+
+### Breaking Changes
+
+- Emit BDS 6,5 ADS-B `version` as an integer (`0..=7`) instead of a string.
+
+### BDS Inference
+
+- **State-aware BDS inference engine** based on ASTERIX cat48 ground truth (#488):
+  - Full state-aware inference replacing the previous stateless approach
+  - Probability density model for BDS register classification
+  - Penalty-based scoring to improve type disambiguation
+  - Fixes incorrect inference on BDS 4,0, 5,0, 6,0 and 6,2 (#489, #490)
+- Do not infer reserved BDS fields — avoids false positives on reserved register values
+- New `bds-infer` feature flag to enable the full inference pipeline
+
+### Bug Fixes
+
+- Fix Python `decode_bds65()` decoding of full Mode S frames
+- Fix interactive Ctrl+C exit: process could get stuck in background after shutdown was already requested (#487)
+- Only spawn `crossterm` EventHandler in interactive mode — avoids spurious event polling in non-TTY contexts (#491)
+- Register `/icao24` REST route and align documentation with actual endpoints (#492)
 
 ## 0.5.1
 
 ### Interactive Mode & Terminal Handling
+
 - **Terminal restoration on crash/panic**:
   - Terminal now properly restores to normal state even when jet1090 crashes or panics
   - Prevents terminal corruption requiring manual `reset` command
@@ -15,6 +37,7 @@
   - Note: SIGKILL (kill -9) cannot be caught and will still require manual terminal reset
 
 ### SDR & Demodulator
+
 - **6 MS/s demodulator support** (#444):
   - Add support for 6 MS/s sample rate (RTL-SDR Blog V4 native rate)
   - Refactor demodulator architecture for better maintainability
@@ -22,6 +45,7 @@
   - Improved performance and reduced CPU usage at higher sample rates
 
 ### Core Improvements
+
 - **Graceful shutdown for async tasks**:
   - Implement coordinated shutdown for all async source receivers
   - Proper cleanup of SDR resources and network connections
@@ -31,6 +55,7 @@
   - Improved code readability and maintainability
 
 ### Bug Fixes
+
 - Fix redis publish timeout handling: retry instead of panic
 - Fix npm publish authentication issues
 - Implement `serde::Deserialize` for `TimedMessage`
@@ -38,6 +63,7 @@
 ## 0.5.0
 
 ### Interactive Mode Improvements
+
 - Fix timestamp ordering and TUI freezes (#438)
   - Messages now processed in correct chronological order
   - Eliminates TUI rendering freezes during high message rates
@@ -47,6 +73,7 @@
 - Expand Malta ICAO24 allocation to 0x4d2fff (#440)
 
 ### Build & Configuration
+
 - Faster builds for release profile
 - More default options in configuration files
 - Clean up CLI arguments
@@ -54,6 +81,7 @@
 - Improve documentation on SDR detection
 
 ### SDR Support & Configuration
+
 - **BREAKING**: Refactor SDR handling to use desperado 0.2.0 library (#416)
   - Unified device configuration with `DeviceConfig` pattern
   - Three feature flags: `rtlsdr`, `soapy`, `pluto` (replace old `sdr` feature)
@@ -92,6 +120,7 @@
   - Remove duplicated code (expanduser utility, config structs)
 
 ### Decoding Improvements
+
 - **CPR decoding robustness improvements** (#434):
   - Fix surface positions decoded at wrong airport (up to 589km errors)
     - Surface messages now properly track airport reference changes
@@ -112,6 +141,7 @@
 - Reinforce pressure decode logic
 
 ### New Features
+
 - **decode1090**: Add CSV (Beast format) support with auto-detection
   - Supports Beast protocol (0x1a 0x32/0x33) message parsing
   - Extracts RSSI signal strength from Beast format
@@ -123,6 +153,7 @@
   - Eliminates code duplication across decode1090 and jet1090
 
 ### Testing & Quality
+
 - Add comprehensive regression test suite in `tests/regression/`
   - Automated field-level comparison between decoder versions
   - Executive summary with change statistics and validation
@@ -135,11 +166,13 @@
   - Reduces mypy errors from 23 to 0
 
 ### Documentation
+
 - Add comprehensive ICAO Doc 9871 specification documentation across all 20 BDS decoder files
   - Every BDS register now includes ICAO table references and section numbers
   - All field encodings documented with formulas, ranges, and LSB resolutions
 
 ### Other
+
 - Implement no_history_expire option (fix #391)
 - Include README in Python package distribution
 - Fix Docker release script

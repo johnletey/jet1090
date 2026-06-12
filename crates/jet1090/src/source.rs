@@ -19,6 +19,16 @@ use desperado::airspy::{
 use desperado::hackrf::HackRfConfig;
 #[cfg(feature = "rtlsdr")]
 use desperado::rtlsdr::{DeviceSelector, RtlSdrConfig};
+#[cfg(feature = "sdr")]
+use desperado::sdr::FilePath;
+#[cfg(feature = "soapy")]
+use desperado::sdr::SoapyPath;
+#[cfg(feature = "airspy")]
+use desperado::sdr::{parse_airspy_serial, AirspyDeviceConfig, AirspyPath};
+#[cfg(feature = "hackrf")]
+use desperado::sdr::{HackrfDeviceConfig, HackrfPath};
+#[cfg(feature = "rtlsdr")]
+use desperado::sdr::{RtlSdrDeviceConfig, RtlSdrPath};
 #[cfg(feature = "soapy")]
 use desperado::soapy::SoapyConfig;
 #[cfg(any(
@@ -104,114 +114,6 @@ pub struct WebsocketStruct {
 pub enum WebsocketPath {
     Short(String),
     Long(WebsocketStruct),
-}
-
-/// Structured RTL-SDR device configuration for TOML
-#[cfg(feature = "rtlsdr")]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct RtlSdrPath {
-    #[serde(flatten)]
-    pub config: RtlSdrDeviceConfig,
-}
-
-/// RTL-SDR device configuration fields
-#[cfg(feature = "rtlsdr")]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RtlSdrDeviceConfig {
-    /// Device index (0, 1, 2, ...)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub device: Option<usize>,
-    /// Serial number filter
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub serial: Option<String>,
-    /// Manufacturer filter
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub manufacturer: Option<String>,
-    /// Product filter
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub product: Option<String>,
-}
-
-/// Structured Airspy device configuration for TOML
-#[cfg(feature = "airspy")]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct AirspyPath {
-    #[serde(flatten)]
-    pub config: AirspyDeviceConfig,
-}
-
-/// Airspy device configuration fields
-#[cfg(feature = "airspy")]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AirspyDeviceConfig {
-    /// Device index (0, 1, 2, ...)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub device: Option<usize>,
-    /// Serial number filter (decimal or hex, e.g. "1234" or "0x4d2")
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub serial: Option<String>,
-    /// LNA gain (0-14), None for default/auto
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub lna_gain: Option<u8>,
-    /// Mixer gain (0-15), None for default/auto
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mixer_gain: Option<u8>,
-    /// VGA gain (0-15), None for default/auto
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vga_gain: Option<u8>,
-}
-
-/// Structured HackRF device configuration for TOML
-#[cfg(feature = "hackrf")]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct HackrfPath {
-    #[serde(flatten)]
-    pub config: HackrfDeviceConfig,
-}
-
-/// HackRF device configuration fields
-#[cfg(feature = "hackrf")]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct HackrfDeviceConfig {
-    /// Device index (0, 1, 2, ...)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub device: Option<usize>,
-    /// LNA gain (0-40 dB, 8 dB steps), None for default (16 dB)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub lna_gain: Option<u32>,
-    /// VGA gain (0-62 dB, 2 dB steps), None for default (20 dB)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vga_gain: Option<u32>,
-    /// Enable RF amplifier (+14 dB before LNA), None for default (false)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub amp_enable: Option<bool>,
-    /// Frequency offset in Hz to avoid DC offset issues (e.g., 100000 for +100kHz)
-    /// Tune to 1090 MHz ± offset. Helps reduce DC offset degradation.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub freq_offset_hz: Option<i32>,
-}
-
-/// Helper struct for deserializing SoapySDR configuration from TOML
-#[cfg(feature = "soapy")]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct SoapyPath {
-    /// SoapySDR driver arguments (e.g., "driver=rtlsdr")
-    pub soapy: String,
-}
-
-/// Structured file configuration for TOML
-#[cfg(feature = "sdr")]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct FilePath {
-    pub file: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -412,19 +314,6 @@ fn build_serial(input: &str) -> u64 {
     input.hash(&mut hasher);
     // Get the hash as a u64
     hasher.finish()
-}
-
-#[cfg(feature = "airspy")]
-fn parse_airspy_serial(value: &str) -> Result<u64, String> {
-    if let Some(hex) = value.strip_prefix("0x") {
-        return u64::from_str_radix(hex, 16)
-            .map_err(|_| format!("Invalid Airspy serial (hex): '{value}'"));
-    }
-
-    value
-        .parse::<u64>()
-        .or_else(|_| u64::from_str_radix(value, 16))
-        .map_err(|_| format!("Invalid Airspy serial: '{value}'"))
 }
 
 impl FromStr for Source {
