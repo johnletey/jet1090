@@ -348,6 +348,16 @@ pub async fn update_snapshot(
                 }
                 _ => {}
             };
+            // Publish under the state lock to keep updates, subscriptions and
+            // expiry in order. Skip conversion when there are no subscribers.
+            if shared.snapshot_tx.receiver_count() > 0 {
+                let _ = shared.snapshot_tx.send(std::sync::Arc::new(
+                    crate::proto::jet1090::v1::SubscribeSnapshotsResponse {
+                        aircraft: vec![(&aircraft.cur).into()],
+                        ..Default::default()
+                    },
+                ));
+            }
         }
     }
 }
@@ -367,14 +377,29 @@ pub async fn store_history(
     {
         if let Some(icao24) = icao24(&message) {
             let mut states = shared.state_vectors.write().await;
-            let aircraft =
-                states
-                    .entry(icao24.to_string())
-                    .or_insert(StateVectors::new(
+            let aircraft = match states.entry(icao24.clone()) {
+                std::collections::btree_map::Entry::Occupied(entry) => {
+                    entry.into_mut()
+                }
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    let aircraft = entry.insert(StateVectors::new(
                         timestamp as u64,
                         icao24,
                         aircraftdb,
                     ));
+                    // Expiry can run between update_snapshot and store_history.
+                    // Publish the recreated entry so subscribers stay in sync.
+                    if shared.snapshot_tx.receiver_count() > 0 {
+                        let _ = shared.snapshot_tx.send(std::sync::Arc::new(
+                            crate::proto::jet1090::v1::SubscribeSnapshotsResponse {
+                                aircraft: vec![(&aircraft.cur).into()],
+                                ..Default::default()
+                            },
+                        ));
+                    }
+                    aircraft
+                }
+            };
 
             match message.df {
                 ExtendedSquitterADSB(_)

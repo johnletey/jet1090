@@ -161,6 +161,7 @@ async fn home() -> Html<&'static str> {
         <li><a href=\"/sensors\">/sensors</a>: returns information about all sensors</li>\
         <li>/airports?q={string}: returns a list of potential airports matching the query string</li>\
         <li><a href=\"/stream\">/stream</a>: live feed of decoded messages as server-sent events</li>\
+        <li>jet1090.v1.AircraftService: GetSnapshot and SubscribeSnapshots over ConnectRPC/gRPC</li>\
         </ul>",
     )
 }
@@ -177,13 +178,28 @@ async fn not_found() -> Response {
         .into_response()
 }
 
-pub async fn serve_web_api(shared: Arc<SharedState>, port: u16) {
+pub(crate) fn router(shared: Arc<SharedState>) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_headers(Any)
+        .expose_headers(Any)
         .allow_methods(Any);
 
-    let app = Router::new()
+    let reflector =
+        connectrpc_reflection::Reflector::from_descriptor_set_bytes(
+            crate::proto::FILE_DESCRIPTOR_SET,
+        )
+        .expect(
+            "invalid embedded snapshot descriptor set; regenerate with Buf",
+        );
+    let rpc = connectrpc_reflection::install(
+        connectrpc::Router::new()
+            .add_service(Arc::new(crate::rpc::AircraftApi(shared.clone()))),
+        reflector,
+    )
+    .into_axum_service();
+
+    Router::new()
         .route("/", get(home))
         .route("/icao24", get(icao24))
         .route("/all", get(all))
@@ -191,15 +207,30 @@ pub async fn serve_web_api(shared: Arc<SharedState>, port: u16) {
         .route("/sensors", get(sensors))
         .route("/airports", get(airports))
         .route("/stream", get(stream_messages))
+        .route_service("/jet1090.v1.AircraftService/GetSnapshot", rpc.clone())
+        .route_service(
+            "/jet1090.v1.AircraftService/SubscribeSnapshots",
+            rpc.clone(),
+        )
+        .route_service(
+            "/grpc.reflection.v1.ServerReflection/ServerReflectionInfo",
+            rpc.clone(),
+        )
+        .route_service(
+            "/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo",
+            rpc,
+        )
         .fallback(not_found)
         .with_state(shared)
-        .layer(cors);
+        .layer(cors)
+}
 
+pub async fn serve_web_api(shared: Arc<SharedState>, port: u16) {
     let listener =
         tokio::net::TcpListener::bind((std::net::Ipv4Addr::UNSPECIFIED, port))
             .await
             .expect("failed to bind port");
-    axum::serve(listener, app)
+    axum::serve(listener, router(shared))
         .await
         .expect("web API server error");
 }

@@ -1,0 +1,12 @@
+version: v2
+plugins:
+  - remote: buf.build/anthropics/buffa:v0.9.0
+    out: crates/jet1090/src/generated/messages
+    opt:
+      - file_per_package=true
+      - json=true
+      - views=true
+  - remote: buf.build/connectrpc/rust:v0.9.0
+    out: crates/jet1090/src/generated/services
+    opt:
+      - buffa_module=crate::proto

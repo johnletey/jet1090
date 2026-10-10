@@ -22,6 +22,9 @@ ssh = ['rs1090/ssh']
 
 [dependencies]
 axum = { version = "0.8.9", features = ["macros"] }
+buffa = { version = "0.9.0", features = ["json"] }
+connectrpc = { version = "0.9.0", default-features = false, features = ["axum", "json"] }
+connectrpc-reflection = { version = "0.9.0", default-features = false }
 chrono = "0.4.44"
 clap = { version = "4.6.1", features = ["color", "derive", "wrap_help", "env"] }
 clap_complete = "4.6.3"

@@ -3,6 +3,8 @@
 mod dedup;
 mod filters;
 mod health;
+mod proto;
+mod rpc;
 mod sensor;
 mod shell;
 mod snapshot;
@@ -68,7 +70,7 @@ struct Options {
     #[serde(default)]
     flags: bool,
 
-    /// Port for the API endpoint (on 0.0.0.0)
+    /// Port for REST and ConnectRPC/gRPC APIs (on 0.0.0.0)
     #[arg(long, default_value=None)]
     serve_port: Option<u16>,
 
@@ -879,32 +881,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn expire_aircraft(shared: Arc<SharedState>, minutes: u64) {
     loop {
         sleep(Duration::from_secs(60)).await;
-        {
-            let mut state_vectors = shared.state_vectors.write().await;
-            let now = SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("SystemTime before unix epoch")
-                .as_secs();
+        let now = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("SystemTime before unix epoch")
+            .as_secs();
+        expire_aircraft_at(&shared, minutes, now).await;
+    }
+}
 
-            let remove_keys = state_vectors
-                .iter()
-                .filter(|(_key, value)| now > value.cur.lastseen + minutes * 60)
-                .map(|(key, _)| key.to_string())
-                .collect::<Vec<String>>();
+async fn expire_aircraft_at(shared: &SharedState, minutes: u64, now: u64) {
+    let mut state_vectors = shared.state_vectors.write().await;
+    let remove_keys = state_vectors
+        .iter()
+        .filter(|(_key, value)| now > value.cur.lastseen + minutes * 60)
+        .map(|(key, _)| key.to_string())
+        .collect::<Vec<String>>();
 
-            for key in remove_keys {
-                state_vectors.remove(&key);
-            }
-
-            let _ = state_vectors
-                .iter_mut()
-                .map(|(_key, value)| {
-                    value.hist.retain(|elt| {
-                        now < (elt.timestamp as u64) + minutes * 60
-                    })
-                })
-                .collect::<Vec<()>>();
-        }
+    for key in &remove_keys {
+        state_vectors.remove(key);
+    }
+    if !remove_keys.is_empty() && shared.snapshot_tx.receiver_count() > 0 {
+        let _ = shared.snapshot_tx.send(Arc::new(
+            proto::jet1090::v1::SubscribeSnapshotsResponse {
+                removed_icao24: remove_keys,
+                ..Default::default()
+            },
+        ));
+    }
+    for value in state_vectors.values_mut() {
+        value
+            .hist
+            .retain(|elt| now < (elt.timestamp as u64) + minutes * 60);
     }
 }
 /// Shared application state split into components to reduce lock contention
@@ -942,16 +949,20 @@ pub struct SharedState {
     health: SharedHealth,
     /// Serialized messages for /stream subscribers
     stream_tx: broadcast::Sender<Arc<String>>,
+    /// Complete aircraft replacements and removals, published under the state lock.
+    snapshot_tx:
+        broadcast::Sender<Arc<proto::jet1090::v1::SubscribeSnapshotsResponse>>,
 }
 
-/// How far a /stream client may fall behind before it is moved to the live
-/// edge of the feed and the messages in between are dropped
+/// Buffered events per subscriber. Lagging /stream clients skip to live data.
+/// Snapshot subscribers receive an error and must reconnect.
 const STREAM_BUFFER: usize = 4096;
 
 impl SharedState {
     fn new(sensors: BTreeMap<u64, Sensor>, health: SharedHealth) -> Self {
         let (quit_tx, _quit_rx) = watch::channel(false);
         let (stream_tx, _stream_rx) = broadcast::channel(STREAM_BUFFER);
+        let (snapshot_tx, _) = broadcast::channel(STREAM_BUFFER);
 
         Self {
             state_vectors: Arc::new(RwLock::new(BTreeMap::new())),
@@ -961,6 +972,7 @@ impl SharedState {
             should_clear: Arc::new(AtomicBool::new(false)),
             health,
             stream_tx,
+            snapshot_tx,
         }
     }
 

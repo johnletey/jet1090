@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package jet1090.v1;
+
+// AircraftService exposes the same aircraft state as the REST /all endpoint.
+service AircraftService {
+  // Returns all currently retained aircraft, without message history.
+  rpc GetSnapshot(GetSnapshotRequest) returns (GetSnapshotResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Starts with a full snapshot, followed by ordered updates and removals.
+  // Reconnect after any stream error to obtain a new full snapshot.
+  rpc SubscribeSnapshots(SubscribeSnapshotsRequest) returns (stream SubscribeSnapshotsResponse);
+}
+
+message GetSnapshotRequest {}
+
+message GetSnapshotResponse {
+  // Current state of all retained aircraft.
+  repeated AircraftSnapshot aircraft = 1;
+}
+
+message SubscribeSnapshotsRequest {}
+
+message SubscribeSnapshotsResponse {
+  // True for the first response, even when no aircraft are present.
+  // Replace local state with aircraft before applying subsequent responses.
+  bool reset = 1;
+  // Complete replacement state for each listed aircraft, keyed by icao24.
+  repeated AircraftSnapshot aircraft = 2;
+  // Remove these aircraft from local state.
+  repeated string removed_icao24 = 3;
+}
+
+// Current aircraft state without message history.
+// Absent optional fields represent unknown values.
+message AircraftSnapshot {
+  // ICAO 24-bit transponder address as a hexadecimal string.
+  string icao24 = 1;
+  // First message timestamp for this retained aircraft, in Unix seconds.
+  uint64 firstseen = 2;
+  // Latest message timestamp for this aircraft, in Unix seconds.
+  uint64 lastseen = 3;
+  // Callsign transmitted by the aircraft.
+  optional string callsign = 4;
+  // Aircraft registration from the database or address-based lookup.
+  optional string registration = 5;
+  // ICAO aircraft type designator from the database, such as A320.
+  optional string typecode = 6;
+  // Four-digit squawk code, including leading zeros.
+  optional string squawk = 7;
+  // WGS84 latitude in degrees.
+  optional double latitude = 8;
+  // WGS84 longitude in degrees.
+  optional double longitude = 9;
+  // Barometric altitude in feet. Values can be negative.
+  optional int32 altitude = 10;
+  // Selected altitude in feet.
+  optional uint32 selected_altitude = 11;
+  // Ground speed in knots.
+  optional double groundspeed = 12;
+  // Vertical rate in feet per minute.
+  optional int32 vertical_rate = 13;
+  // Track angle in degrees clockwise from true north.
+  optional double track = 14;
+  // Indicated airspeed in knots.
+  optional uint32 ias = 15;
+  // True airspeed in knots.
+  optional uint32 tas = 16;
+  // Mach number.
+  optional double mach = 17;
+  // Roll angle in degrees. Positive values indicate a right bank.
+  optional double roll = 18;
+  // Magnetic heading in degrees.
+  optional double heading = 19;
+  // Navigation accuracy category for position (NACp).
+  optional uint32 nacp = 20;
+  // Number of messages processed for this retained aircraft.
+  uint64 count = 21;
+  // Receiver metadata from the latest message for this aircraft.
+  repeated SensorMetadata metadata = 22;
+  // ICAO airport code, for aircraft on the surface.
+  optional string airport = 23;
+}
+
+// Timing and signal information for a message received by one sensor.
+message SensorMetadata {
+  // System timestamp in Unix seconds.
+  double system_timestamp = 1;
+  // GNSS timestamp in Unix seconds, when available.
+  optional double gnss_timestamp = 2;
+  // Nanoseconds since the beginning of the UTC day.
+  optional uint64 nanoseconds = 3;
+  // Signal level reported by the receiver.
+  optional float rssi = 4;
+  // Receiver identifier.
+  uint64 serial = 5;
+  // Configured receiver name, when available.
+  optional string name = 6;
+}
